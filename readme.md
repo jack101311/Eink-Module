@@ -147,8 +147,9 @@ Specify whether to auto-generate a content table for this book or not. For more 
   Boolean
 - `default`
   true
-  > [!NOTE]
-  > Content table will be auto-generated only when there are more than 3 headers in the book even when this property is true.
+
+> [!NOTE]
+> Content table will be auto-generated only when there are more than 3 headers in the book even when this property is true.
 
 ### --useNote
 
