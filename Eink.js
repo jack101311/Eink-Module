@@ -1060,23 +1060,23 @@ class Eink {
           this.enterEinkMode();
         };
       }
+    }
 
-      if (btnLocator) {
-        $(einkBtn).css("position", "static");
-        btnLocator.appendChild(einkBtn);
-      } else {
-        document.documentElement.append(einkBtn);
-        $(einkBtn).css({
-          position: position,
-          top: top,
-          left: left,
-          right: right,
-          bottom: bottom,
-          width: "fit-content",
-          height: "fit-content",
-          "z-index": 99999,
-        });
-      }
+    if (btnLocator) {
+      $(einkBtn).css("position", "static");
+      btnLocator.appendChild(einkBtn);
+    } else {
+      document.documentElement.append(einkBtn);
+      $(einkBtn).css({
+        position: position,
+        top: top,
+        left: left,
+        right: right,
+        bottom: bottom,
+        width: "fit-content",
+        height: "fit-content",
+        "z-index": 99999,
+      });
     }
   }
 
