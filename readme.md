@@ -91,11 +91,11 @@ There are 5 keyword values for this property, the main difference for these valu
   book is used to display the sub-sections or other elements that you want to be displayed in a paginated fashion. When users swipe from right to left or press the Esc key from the view of any book, they will return to the view of mainbook.
   </br>
 
-  > [!IMPORTANT]
-  > Please assign **the closest container of the main content** on the webpage as **mainbook** or **book** as possible. That is, try not include any layout structures or elements that are not relevant or not displayed such as \<script> \<style> in the book. This will improve the overall performance of this module and make it work as expected.
+> [!IMPORTANT]
+> Please assign **the closest container of the main content** on the webpage as **mainbook** or **book** as possible. That is, try not include any layout structures or elements that are not relevant or not displayed such as \<script> \<style> in the book. This will improve the overall performance of this module and make it work as expected.
 
-  > [!TIP]
-  > If there are several sections on the webpage, such as \<aside> \<header> \<footer>, display them separately as different books (windows) and navigate these books by UI or gestures will enhance the immersive reading experience.
+> [!TIP]
+> If there are several sections on the webpage, such as \<aside> \<header> \<footer>, display them separately as different books (windows) and navigate these books by UI or gestures will enhance the immersive reading experience.
 
 - **book-content**
   book-content is the contents of the book. It is the target to be re-arranged in a paginated fashion. If not specified, the default content will be all elements contained in the book and most of the time you don't need to specify an element to be the book-content.</br>
@@ -158,8 +158,9 @@ Specify whether to auto-formatting the footnotes. For more detailed explanation,
   Boolean
 - `default`
   true
-  > [!NOTE]
-  > Footnotes will be auto-formatted to the footnote section only when there are footnotes written in the specified format in the book even when this property is true.
+
+> [!NOTE]
+> Footnotes will be auto-formatted to the footnote section only when there are footnotes written in the specified format in the book even when this property is true.
 
 ### --bookTitle
 
@@ -190,5 +191,6 @@ If you like this project. You can support this project by giving feedbacks, bein
 If you succesfully apply this module to your website and your website is public, please share it with me. I will be glad to see the project works well.
 
 For any suggestions, feed backs, please email me at jacks101311@gmail.com
+</br>
 </br>
 [![Please support this project by dontation](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/jack101311)
