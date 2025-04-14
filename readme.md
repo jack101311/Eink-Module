@@ -1,4 +1,4 @@
-# Eink Module: Making Your Websites Easier to Read.
+# Eink Module: Making Your Websites Easier to Read
 
 ## What is Eink Module
 
@@ -6,7 +6,7 @@ Eink module is a front-end javaScript module for web designers to quickly apply 
 
 Eink module make your website looks more like an eBook and make immersive reading on the web possible.
 
-Though it's originally designed for E Ink device users, this module can enhance the **reading** experience on your websites better for ANY devices.
+Though it's originally designed for E Ink device users, this module can enhance the **reading** experience on your websites for ANY devices.
 
 ### Main Features of Eink Mode
 
@@ -23,7 +23,7 @@ To better catch the spirit of this module, you can see a thorough explanation of
 
 ## How to Use This Module
 
-1. Download the scripts and upload them to your web server or websites.
+1. Download the scripts and upload them to your web server or websites. Put the script in the same folder of your webpage.
 2. Reference them with `<script>` tag in the `<head>` section.
 
 ```html
@@ -42,7 +42,7 @@ eink.init();
 
 4. You can customize the position of the eink button by 3 ways:
    1. Make an element with class "einkBtn", the eink button will be "append" to it.
-   2. Use `setupEinkBtn` method to adjust the position of the button.
+   2. Use `setupEinkBtn({position,top,left,right,bottom})` method to adjust the position of the button.
    3. Directly use CSS or javaScript to control its position.  
       </br>
 5. Now you can add CSS styles to adjust the display and look of your websites under Eink Mode by simply using the `@media` CSS media queries with the media type `eink`. These styles will be rendered only when the users enter Eink mode. Therefore you can keep 2 different styles for your website, one under scrolling mode, one under paginated Eink mode and you can manage these styles very easily.
@@ -51,7 +51,7 @@ eink.init();
 /* Styles under eink mode */
 @media eink {
     .main_section {
-        --display: mainbook;
+        --display: mainBook;
         font-size: 16px;
         color: black;
     }
@@ -81,18 +81,18 @@ eink.init();
 
 ### --display
 
-The `--display` property is quite similar to the `display` CSS property. The main feature of Eink mode is to **display your website in a paginated fashion** rather than scrolling, so there's a display style called **book**. You can specify the main content of your website to be displayed like a book by giving it the `--display` CSS property with values `mainbook`. And also you can make other sub-sections or elements to be displayed in a paginated manner, just giving them the `--display` property with the value of `book`.
+The `--display` property is quite similar to the `display` CSS property. The main feature of Eink mode is to **display your website in a paginated fashion** rather than scrolling, so there's a display style called **book**. You can specify the main content of your website to be displayed like a book by giving it the `--display` CSS property with values `mainBook`. And also you can make other sub-sections or elements to be displayed in a paginated manner, just giving them the `--display` property with the value of `book`.
 
 There are 5 keyword values for this property, the main difference for these values are listed below:
 
-- **mainbook**
-  mainbook is used to display the main content of your webpage (the main view). Users can enter scroll mode by swiping from right to left "only" when the focused book is mainbook. (Or when they press the Esc key.)
+- **mainBook**
+  mainBook is used to display the main content of your webpage (the main view). Users can enter scroll mode by swiping from right to left "only" when the focused book is mainBook. (Or when they press the Esc key.)
 - **book**
-  book is used to display the sub-sections or other elements that you want to be displayed in a paginated fashion. When users swipe from right to left or press the Esc key from the view of any book, they will return to the view of mainbook.
+  book is used to display the sub-sections or other elements that you want to be displayed in a paginated fashion. When users swipe from right to left or press the Esc key from the view of any book, they will return to the view of mainBook.
   </br>
 
 > [!IMPORTANT]
-> Please assign **the closest container of the main content** on the webpage as **mainbook** or **book** as possible. That is, try not include any layout structures or elements that are not relevant or not displayed such as \<script> \<style> in the book. This will improve the overall performance of this module and make it work as expected.
+> Please assign **the closest container of the main content** on the webpage as **mainBook** or **book** as possible. That is, try not include any layout structures or elements that are not relevant or not displayed such as \<script> \<style> in the book. This will improve the overall performance of this module and make it work as expected.
 
 > [!TIP]
 > If there are several sections on the webpage, such as \<aside> \<header> \<footer>, display them separately as different books (windows) and navigate these books by UI or gestures will enhance the immersive reading experience.
@@ -100,9 +100,10 @@ There are 5 keyword values for this property, the main difference for these valu
 - **book-content**
   book-content is the contents of the book. It is the target to be re-arranged in a paginated fashion. If not specified, the default content will be all elements contained in the book and most of the time you don't need to specify an element to be the book-content.</br>
   If you don't want some elements to be re-arranged by the paging algorithm and thus be turned out of view when the users turn the page, you can specify the content element by this value and those elements **not** contained by this book-content element will be fixed on the book's page. (Similar to the effect of CSS display: fixed.)
-  </br>
-  > [!NOTE]
-  > Book-content must be the **direct descendant** element of the book element.
+
+> [!NOTE]
+> Book-content must be the **direct descendant** element of the book element. And make sure your content container's padding-left and padding-right should be 0 to let printing function works normally.
+
 - **book-item**
   If you want an element and its descedants to be regarded as a whole to be re-arranged by the paging algorithm, that is to say, you don't want them to be broken by the page, you can assign the element to be a book-item. It's similar to the CSS "break-inside: avoid", but the main difference is that when you have a picture or a video in the book-item, these media will be **resized** to make the whole book-item element fit into a page. This is especially useful when you have a picture with a caption and you want them to fit into a page as possible.
 - **book-UI**
@@ -110,7 +111,7 @@ There are 5 keyword values for this property, the main difference for these valu
 
 ### Book Config CSS Properties
 
-The below CSS properties will work only if you write them in the same CSS rule with `--display: mainbook;` or `--display: book;`. These properties are used to configure the book.
+The below CSS properties will work only if you write them in the same CSS rule with `--display: mainBook;` or `--display: book;`. These properties are used to configure the book.
 
 ### --contents
 
@@ -187,7 +188,7 @@ To fine tune the Eink module for your website, there are APIs for Eink class and
 
 ## Support This Project
 
-If you like this project. You can support this project by giving feedbacks, being a contributor to this project or by donation.
+If you like this project. You can support this project by giving feedback, being a contributor to this project or by donation.
 
 If you succesfully apply this module to your website and your website is public, please share it with me. I will be glad to see the project works well.
 

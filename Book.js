@@ -116,7 +116,11 @@ class Book {
     this.container.classList.add("book_" + this.instanceID);
     this.container.book = this;
     this.#columnGap = this.bookConfig.leftMargin * 2; // The column gap must be at least twice the left margin to prevent contents exposed to the next page.
-    if (!this.bookConfig.bookTitle) this.bookTitle = this.getBookTitle();
+    if (!this.bookConfig.bookTitle) {
+      this.bookTitle = this.getBookTitle();
+    } else {
+      this.bookTitle = $(this.bookConfig.bookTitle)[0];
+    }
     this.author = this.bookConfig.author;
     if (this.bookConfig.lang) this.lang = this.bookConfig.lang;
     else this.lang = document.documentElement.lang.includes("zh") ? "zh-TW" : "en";
@@ -685,12 +689,23 @@ class Book {
       $(this.container)
         .find("> *")
         .not($(this.contents))
-        .filter(function () {
-          return ["static", "relative"].includes($(this).css("position"));
-        })
-        .css({
-          position: "relative",
-          left: this.pageLength * (this.#currentPage - 1) + "px",
+        .not(".draw")
+        .each((index, elem) => {
+          const position = $(elem).css("position");
+          if (["static", "relative"].includes(position)) {
+            this.bookEditor.changeStyle(elem, {
+              position: "relative",
+              left: this.pageLength * (this.#currentPage - 1) + "px",
+            });
+          } else if (position === "absolute") {
+            if (!elem.originalLeft) {
+              elem.originalLeft = parseFloat($(elem).css("left"));
+            }
+            this.bookEditor.changeStyle(elem, {
+              left: elem.originalLeft + this.pageLength * (this.#currentPage - 1) + "px",
+              width: elem.clientWidth + 30 + "px",
+            });
+          }
         });
 
       // Correct the scrollTop position for anchor link jumpping.
@@ -714,19 +729,11 @@ class Book {
       // Find the bookItem located at the current scroll position.
       this.#anchor = this.#findAnchor();
     }
-    if (this.isFullScreen && document.documentElement.scrollTop > window.innerHeight) Book.#preventVolumnKeyEvent = true; // Prevent the setupPages process to trigger the volume key event (documentElement's scrollHeight will change due to page setup process.)
+    if (this.isFullScreen && document.documentElement.scrollTop !== 0) Book.#preventVolumnKeyEvent = true; // Prevent the setupPages process to trigger the volume key event (documentElement's scrollHeight will change due to page setup process.)
     this.setupEinkStyle();
     this.#setupPages();
     this.setupListeners();
 
-    // Set timeout is used for iOS browsers to prevent the default scrollTo behavior of the browser from affecting jumpToAnchor() when the window.innerHeight is changed due to change of the apperance of the address bar.
-    // if (this.isVisible) {
-    //   if (this.inIOSBrowser) {
-    //     window.setTimeout(() => this.#jumpToAnchor(this.#anchor), 300);
-    //   } else {
-    //     this.#jumpToAnchor(this.#anchor);
-    //   }
-    // }
     if (this.isVisible) this.#jumpToAnchor(this.#anchor);
     this.#executeBookEvent("entereink");
     console.log(`Book ${this.instanceID} has entered Eink mode.`);
@@ -861,22 +868,12 @@ class Book {
     }
     const defaultStyle = `
      .pageNumDiv {
-      zIndex: 30;
+      z-Index: 30;
       font-size: 10px;
       line-height: 1.5;
       color: dimgray;
       margin: 0px;
       display: block;
-      position: relative;
-      float: right;
-      clear: both;
-      bottom: 10px;
-     }
-
-     .pageNumDiv.fullScreen {
-      position: fixed;
-      right: 10px;
-      bottom: 10px;
      }
 
       @media print {
@@ -934,7 +931,6 @@ class Book {
     document.onselectionchange = () => {
       Book.textSelection = window.getSelection().toString();
     };
-
     // Support the volume key page flipping feature of EinkBro.
     document.documentElement.scrollTop = Book.#scrollBufferLength / 2;
     $(window).on("scroll.book", Book.#handleVolumeKeyPageFlip);
@@ -1318,8 +1314,6 @@ class Book {
           "column-width": this.contents.clientWidth + "px",
           "column-fit": "auto",
           "column-gap": this.#columnGap + "px",
-          widows: "1",
-          orphans: "1",
           marginLeft: "0px",
           marginRight: "0px",
           marginTop: onlyVisibleElemIsContent ? "0px" : topMargin + "px",
@@ -1378,13 +1372,11 @@ class Book {
         this.contents,
         {
           display: "block",
-          height: this.contents.clientHeight + parseFloat($(this.contents).css("line-height")) + "px",
+          height: this.contents.clientHeight + 1 + "px", // + 1 because the clientHeight is rounded down by default, but line-height doen'ts.
           width: this.contents.clientWidth + "px",
           "column-width": this.contents.clientWidth + "px",
           "column-fit": "auto",
           "column-gap": `${this.#columnGap}px`,
-          widows: "1",
-          orphans: "1",
           marginTop: onlyVisibleElemIsContent ? "0px" : topMargin + "px",
           marginBottom: onlyVisibleElemIsContent ? "0px" : bottomMargin + "px",
           marginLeft: "0px",
@@ -1526,6 +1518,29 @@ class Book {
       pageNumDiv.id = "pageNumDiv_" + this.instanceID;
       if (this.isFullScreen) pageNumDiv.classList.add("fullScreen");
       this.container.append(pageNumDiv);
+
+      if (this.isFullScreen) {
+        this.bookEditor.changeStyle(
+          pageNumDiv,
+          {
+            position: "fixed",
+            right: "10px",
+            bottom: "10px",
+          },
+          true
+        );
+      } else {
+        this.bookEditor.changeStyle(
+          pageNumDiv,
+          {
+            position: "relative",
+            float: "right",
+            clear: "both",
+            bottom: "10px",
+          },
+          true
+        );
+      }
     }
     pageNumDiv.textContent = this.currentPage + "/" + this.totalPages;
     console.log("Page number added.");
@@ -2139,6 +2154,7 @@ class Book {
   }
 
   static #handleVolumeKeyPageFlip(evt) {
+    if (evt.target === document) return; // Important! This is to prevent users touch on iframe and casuing quick continuous page turning.
     if (Book.focusedBook.mode === "eink") {
       if (!Book.#preventVolumnKeyEvent) {
         const scrollTopPos = Math.round(document.documentElement.scrollTop);
@@ -2369,7 +2385,7 @@ class Book {
   setupContentTable(contTableConfig = {}) {
     const defaultConfig = {
       area: this.contents,
-      expandSubLists: true,
+      expandSubLists: false,
       lang: this.lang,
       minLevel: "h1",
       maxLevel: "h6",
@@ -2379,12 +2395,6 @@ class Book {
     const unfoldIcon = "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh61PrcDdc05urR5s9YBt-zsRGyk51SKcunC0Ha8sYECZK9aEX_EYKv5fe5au4ERFc83wYtbe5-G4tkM9bTtih-AzGh7-0GHBrm_xixoaBR0eSO2zuLWkQooXIaHims2Mk1g6_KKyoIrw/s320/25223.png";
     const foldIcon = "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhLS0VMZ5HkQS6wSuNLbo1a8uYSiiysarkQCKxLrH31AdFKDcC1_0klWP9FGtsa9_1tKu-NEX7SniBnDSIhzLBuvMpZ1vy8HIja-OKm6wXQme057NMMF1lJ8UJLklsP9VnRd2BspzQXAA/s200/25623.png";
 
-    // Try to find the div with class="cont_table", if not, create one and prepend it before the first header.
-    let contentTable = $(this.contents)
-      .find(".cont_table")
-      .filter((index, elem) => {
-        return elem.closest(".article_" + this.instanceID) === this.contents;
-      })[0];
     const headers = $(area)
       .find(":header")
       .not(this.bookTitle)
@@ -2394,13 +2404,29 @@ class Book {
 
     if (headers.length <= 3) return; // If there are less than 3 headers, skip the table creation process
 
-    // Create a content table if it doesn't exist already.
+    // Try to find the div with class="cont_table", if not, create one and prepend it before the first header.
+    let contentTable = $(this.contents)
+      .find(".cont_table")
+      .filter((index, elem) => {
+        return elem.closest(".article_" + this.instanceID) === this.contents;
+      })[0];
     if (!contentTable) {
       contentTable = document.createElement("DIV");
       contentTable.classList.add("cont_table");
-      contentTable.classList.add("cont_Table_book" + this.instanceID);
+      contentTable.classList.add("cont_table_book_" + this.instanceID);
+      headers[0].insertAdjacentElement("beforebegin", contentTable);
+    } else {
+      contentTable.classList.add("cont_table_book_" + this.instanceID);
+
+      // Reset all header id if the content table has been setup before.
+      $(area)
+        .find(":header")
+        .not(this.bookTitle)
+        .filter((index, elem) => {
+          return !["true", true].includes(elem.getAttribute("ignoreTable")) && this.isValidNode(elem) && Number(elem.nodeName.slice(1)) >= Number(minLevel.slice(1)) && Number(elem.nodeName.slice(1)) <= Number(maxLevel.slice(1));
+        })
+        .attr("id", null);
     }
-    headers[0].insertAdjacentElement("beforebegin", contentTable);
 
     this.contentTable = contentTable;
     contentTable.setupContentTable = this.setupContentTable.bind(this);
@@ -2476,7 +2502,7 @@ class Book {
 
     //the title of table of contents should be added after its entries are established otherwise the entry will also contain this <h3> title.
     const tableTitle = lang === "zh-TW" ? "目錄" : "Table of Content";
-    contentTable.innerHTML = `<h3>${tableTitle}</h3>` + htmlContent;
+    contentTable.innerHTML = `<h3 ignoreTable="true">${tableTitle}</h3>` + htmlContent;
 
     // Check the visibility of the sublists, if it's set to visible, then all it's parent sublist should be visible.
     $(contentTable)
@@ -2548,6 +2574,7 @@ class Book {
         $(this.book.contents)
           .find("i:contains('Note'), i:contains('註')")
           .filter((index, elem) => {
+            elem = elem.closest("i");
             return elem.previousElementSibling?.nodeName === "U" && elem.closest(".bookContents") === this.book.contents;
           })
       ); // Distinguish the note pattern from other <i> elements.
@@ -2737,6 +2764,7 @@ class Book {
 
       noteWindow.book = new Book(noteWindow.note, {
         contents: noteWindow.noteContent,
+        useContentTable: false,
         einkStyle: einkStyle,
         fullScreen: false,
       });
@@ -2756,7 +2784,7 @@ class Book {
         elem.classList.add("bookUI");
 
         if (elem.previousElementSibling?.nodeName === "U") {
-          elem.previousSibling.id = `notedText_${index + 1}_${this.bookID}`;
+          elem.previousElementSibling.id = `notedText_${index + 1}_${this.bookID}`;
         } else {
           console.error(`Cannot find any sentence noted by the note number ${index + 1}. Please correct this error by adding "underline" to the sentence.`);
         }
@@ -2765,7 +2793,7 @@ class Book {
       let noteSectionHeader = $(this.book.contents)
         .find(":header")
         .filter(function () {
-          return $(this).text().includes("Note") || $(this).text().includes("註解");
+          return $(this).text().includes("Note ") || $(this).text().includes("註解");
         })[0];
 
       /* If a 'Notes' heading already exists in the article, it means that notes are already placed at the end of the article. (This code snippet is only used by myself for formatting my published old articles. You can delete this code section.) */
@@ -2835,8 +2863,35 @@ class Book {
           const note = document.createElement("P");
           let startNode, startOffset, endNode, endOffset;
           let openParenFound = false;
+          let ohterParentCount = 0;
 
-          traverseNodes(searchTarget);
+          const treeWalker = document.createTreeWalker(searchTarget, NodeFilter.SHOW_TEXT, (node) => {
+            if (node.compareDocumentPosition(elem) === Node.DOCUMENT_POSITION_PRECEDING) {
+              return NodeFilter.FILTER_ACCEPT;
+            } else {
+              return NodeFilter.FILTER_REJECT;
+            }
+          });
+
+          while (treeWalker.nextNode()) {
+            if (treeWalker.currentNode.textContent.includes("(") || treeWalker.currentNode.textContent.includes("（")) {
+              if (!openParenFound) {
+                startNode = treeWalker.currentNode;
+                startOffset = treeWalker.currentNode.textContent.indexOf("(") === -1 ? treeWalker.currentNode.textContent.indexOf("（") : treeWalker.currentNode.textContent.indexOf("(");
+                openParenFound = true;
+              } else ohterParentCount++;
+            }
+
+            if ((openParenFound && treeWalker.currentNode.textContent.includes(")")) || treeWalker.currentNode.textContent.includes("）")) {
+              if (ohterParentCount) {
+                ohterParentCount--;
+              } else {
+                endNode = treeWalker.currentNode;
+                endOffset = treeWalker.currentNode.textContent.indexOf(")") === -1 ? treeWalker.currentNode.textContent.indexOf("）") + 1 : treeWalker.currentNode.textContent.indexOf(")") + 1;
+                break;
+              }
+            }
+          }
 
           if (startNode && endNode) {
             let range = Book.rangeTool.createRange(startNode, endNode, startOffset, endOffset);
@@ -2850,40 +2905,14 @@ class Book {
               note.appendChild(fragment);
               range.insertNode(note);
             }
-            note.innerHTML = note.innerHTML.slice(1, -1); //remove parentheses
+            note.textContent = note.textContent.trim().slice(1, -1); //remove parentheses
           } else {
             console.error(`Cannot find the corresponding note after the note number ${index}. Please correct this error by adding a note right after the note number and make sure the note are enclosed by parentheses such as "(note...)".`);
           }
 
           note.insertAdjacentHTML("afterbegin", `<b>${elem.textContent.trim().slice(1, -1)}、</b>`);
+          this.book.notes.push(note);
           this.book.noteSection.append(note);
-
-          function traverseNodes(node) {
-            if (node.nodeType === Node.TEXT_NODE) {
-              const text = node.textContent;
-              const openIndex = text.indexOf("(");
-              const closeIndex = text.indexOf(")");
-
-              if (!openParenFound && openIndex !== -1) {
-                startNode = node;
-                startOffset = openIndex;
-                openParenFound = true;
-              }
-
-              if (openParenFound && closeIndex !== -1) {
-                endNode = node;
-                endOffset = closeIndex + 1;
-                return true; // Stop traversal
-              }
-            } else if (node.nodeType === Node.ELEMENT_NODE) {
-              for (let i = 0; i < node.childNodes.length; i++) {
-                if (traverseNodes(node.childNodes[i])) {
-                  return true; // Stop traversal
-                }
-              }
-            }
-            return false;
-          }
         });
 
         console.log("Notes have been extracted and placed in the note section.");

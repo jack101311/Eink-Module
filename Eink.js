@@ -599,6 +599,17 @@ class Eink {
     $("#einkBtn").hide();
 
     if (!document.getElementById("controlPanel")) this.setupControl();
+    if (document.readyState !== "complete") {
+      $("#highlightMode, #draw, #noteBook, #printMode").each((i, elem) => {
+        elem.onclick = () => {
+          this.notReady();
+        };
+        elem.classList.add("inactiveBtn");
+      });
+      $(window).on("load", () => {
+        this.setupControl();
+      });
+    }
     document.documentElement.classList.add("disable-default-touch");
     this.#setupPrintListener();
 
@@ -640,51 +651,49 @@ class Eink {
   }
 
   #processEinkMediaQueries() {
-    // Iterate through all stylesheets
+    const processSelectorText = (selectorText) => selectorText.split(",").map((s) => s.trim());
+
+    const selectorTypes = {
+      book: (selectors, rule) => {
+        selectors.forEach((selector) => {
+          const existingIndex = this.#bookSelectors.findIndex(([s]) => s === selector);
+          if (existingIndex !== -1) {
+            this.#bookSelectors[existingIndex][1] = rule;
+          } else {
+            this.#bookSelectors.push([selector, rule]);
+          }
+        });
+      },
+      mainBook: (selectors, rule) => {
+        this.#mainBookSelector = [selectors[0], rule]; // Assuming only one selector for mainBook
+      },
+      "book-content": (selectors) => this.#contentSelectors.push(...selectors),
+      "book-item": (selectors) => this.#itemSelectors.push(...selectors),
+      "book-UI": (selectors) => this.#uiSelectors.push(...selectors),
+    };
+
     for (let i = 0; i < document.styleSheets.length; i++) {
-      const styleSheet = document.styleSheets[i];
       try {
-        // Iterate through all rules in the stylesheet
+        const styleSheet = document.styleSheets[i];
         for (let j = 0; j < styleSheet.cssRules.length; j++) {
           const rule = styleSheet.cssRules[j];
-
-          // Check if the rule is a media query for Eink
           if (rule.media && rule.media.mediaText === "eink") {
             this.#einkRules.push(rule);
-            // Iterate through all rules within the Eink media query
             for (let k = 0; k < rule.cssRules.length; k++) {
               const einkRule = rule.cssRules[k];
               this.einkStyle += einkRule.cssText + "\n";
 
-              // Check if the rule has the custom property '--display: book'
               if (einkRule.style) {
                 const displayValue = einkRule.style.getPropertyValue("--display");
-                if (displayValue) {
-                  switch (displayValue) {
-                    case "book":
-                      // Add the selector text to the array
-                      this.#bookSelectors.push([einkRule.selectorText, einkRule]);
-                      break;
-                    case "mainBook":
-                      this.#mainBookSelector = [einkRule.selectorText, einkRule];
-                      break;
-                    case "book-content":
-                      this.#contentSelectors.push(einkRule.selectorText);
-                      break;
-                    case "book-item":
-                      this.#itemSelectors.push(einkRule.selectorText);
-                      break;
-                    case "book-UI":
-                      this.#uiSelectors.push(einkRule.selectorText);
-                      break;
-                  }
+                if (displayValue && selectorTypes[displayValue]) {
+                  const selectors = processSelectorText(einkRule.selectorText);
+                  selectorTypes[displayValue](selectors, einkRule);
                 }
               }
             }
           }
         }
       } catch (e) {
-        // Some stylesheets may not be accessible due to CORS, we'll skip those
         console.warn(`Couldn't access rules in stylesheet ${i}:`, e);
       }
     }
@@ -737,6 +746,8 @@ class Eink {
           case "n":
             this.highlighter.showNoteBook();
             break;
+          case "c":
+            this.checkContent();
         }
       }
     } else if (this.mode === "eink.notebook") {
@@ -883,11 +894,11 @@ class Eink {
     } else if (evt.pointerType === "pen") {
       // This code catch the fact that the  user has a stylus right now so it automatically enter draw mode. Thus users can sketch immediately.
       if (this.mode === "eink.read") {
+        if (document.readyState !== "complete") return;
         this.manual.hide();
         $("#controlPanel").hide();
-        const floatToolBar = this.floatToolBar.setFloatToolBar("draw");
-        $(floatToolBar).hide();
         this.painter.enterDrawMode();
+        $("#floatToolBar").hide();
         const canvas = document.elementFromPoint(evt.clientX, evt.clientY);
         $(canvas).trigger("pointerdown", {
           target: canvas,
@@ -982,7 +993,6 @@ class Eink {
 
           //If user swipes from top right to bottom left in Eink mode, enter draw mode.
           if (isUpperRight && deltaX < -swipeThreshold && deltaY > swipeThreshold) {
-            this.floatToolBar.setFloatToolBar("draw");
             this.painter.enterDrawMode();
           } else if (isUpperLeft && deltaX > swipeThreshold && deltaY > swipeThreshold) {
             this.highlighter.enterHighlightMode(this.bookContents);
@@ -1034,7 +1044,15 @@ class Eink {
     $("#controlPanel").show();
   }
 
-  setupEinkBtn(position = "static", top = "30px", left = "0px", right = "30px", bottom = "0px") {
+  setupEinkBtn(location = {}) {
+    const defaultLocation = {
+      position: "static",
+      top: "30px",
+      left: "0px",
+      right: "30px",
+      bottom: "0px",
+    };
+    location = { ...defaultLocation, ...location };
     let btnLocator = document.getElementsByClassName("einkBtn")[0];
     let einkBtn = document.getElementById("einkBtn");
     if (!einkBtn) {
@@ -1068,14 +1086,12 @@ class Eink {
     } else {
       document.documentElement.append(einkBtn);
       $(einkBtn).css({
-        position: position,
-        top: top,
-        left: left,
-        right: right,
-        bottom: bottom,
-        width: "fit-content",
-        height: "fit-content",
-        "z-index": 99999,
+        ...defaultLocation,
+        ...{
+          width: "fit-content",
+          height: "fit-content",
+          "z-index": 99999,
+        },
       });
     }
   }
@@ -1365,6 +1381,10 @@ class Eink {
       controlPanel.id = "controlPanel";
       controlPanel.classList.add("eink");
       controlBox.id = "controlBox";
+      $(controlPanel).on("click", (evt) => {
+        evt.stopPropagation();
+        this.hidePanel(evt);
+      });
 
       setStyle();
     }
@@ -1394,12 +1414,10 @@ class Eink {
         this.makePanelObj(
           "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgLTmabfpczkcfTrJgzBo_LR-RWaJIhyTNM8A7p_WHA5J2TIqs4drAqgI8QHvJjxr707Xy-Jw56Iq9H8NEjE7BZ_Bf_3Lxd3Ff2EuyLJTI3PD9_yjgBQr7kX7NU8wLclfUfl-V_3y40YFdI9kpfZ2hqBDq1GmGrIDD1sgfEEqHzuGnXjhYfjcy8JVFB/s1600/My%20Icons.001.jpeg",
           () => {
-            this.floatToolBar.setFloatToolBar("draw");
             this.painter.enterDrawMode();
           },
           "draw"
         ),
-        this.makePanelObj(this.toolBarIconSrc.scroll_mode, this.enterScrollMode, "scrollMode"),
         this.makePanelObj(this.toolBarIconSrc.noteBook_icon, this.highlighter.showNoteBook.bind(this.highlighter), "noteBook"),
         this.makePanelObj(
           this.toolBarIconSrc.printer,
@@ -1417,10 +1435,13 @@ class Eink {
           },
           "showManual"
         ),
+        this.makePanelObj(this.toolBarIconSrc.scroll_mode, this.enterScrollMode, "scrollMode"),
       ];
 
       if (contTable) {
         panelObjArray.unshift(this.makePanelObj(this.toolBarIconSrc.content_table, this.checkContent, "checkContent"));
+      } else {
+        panelObjArray.unshift(this.makePanelObj(this.toolBarIconSrc.content_table, this.checkContent, "spacer_1"));
       }
     }
 
@@ -1429,7 +1450,7 @@ class Eink {
       const icon = document.createElement("IMG");
       icon.setAttribute("src", panelObj.img);
       item.setAttribute("id", panelObj.id);
-      if (panelObj.id === "spacer") {
+      if (panelObj.id.includes("spacer")) {
         item.style.visibility = "hidden";
       }
       item.onclick = panelObj.func.bind(this);
@@ -1440,10 +1461,7 @@ class Eink {
 
     controlPanel.append(controlBox);
     controlPanel.style.display = "none";
-    $(controlPanel).on("click", (evt) => {
-      evt.stopPropagation();
-      this.hidePanel(evt);
-    });
+
     document.documentElement.append(controlPanel);
     console.log("Control Panel created");
 
@@ -1784,6 +1802,16 @@ class Eink {
     }
   }
 
+  notReady() {
+    const message = this.lang === "zh-TW" ? "請待網頁讀取完畢" : "Please wait for the page to load completely.";
+    this.showPopup(message);
+    $(window).on("load", () => {
+      const message = this.lang === "zh-TW" ? "網頁讀取完成" : "Page loaded.";
+      this.showPopup(message);
+    });
+    return;
+  }
+
   #showSizeChangePopup(isIncrease) {
     clearTimeout(this.#popupTimeout);
 
@@ -1872,12 +1900,13 @@ class Eink {
     popup.style.display = "block";
 
     // Hide popup when clicked anywhere on the document
-    const hidePopup = () => {
+    const hidePopup = (evt) => {
+      if (evt?.type === "pointerdown" && evt.pointerType === "pen") return;
       popup.style.display = "none";
       $(window).off("popup");
     };
 
-    $(window).on("click.popup touchstart.popup", hidePopup);
+    $(window).on("click.popup pointerdown.popup", hidePopup);
 
     // Automatically hide popup after 2 seconds
     setTimeout(hidePopup, 2000);
@@ -1914,6 +1943,12 @@ class Eink {
     handlePagechange: () => {},
 
     enterDrawMode() {
+      if (document.readyState !== "complete") {
+        this.eink.notReady();
+        return;
+      }
+      this.eink.floatToolBar.setFloatToolBar("draw");
+
       if (this.eink.mode !== "eink.draw") {
         this.eink.mode = "eink.draw";
         console.log("Entering draw mode. Setting up Canvas for drawing.");
@@ -2302,10 +2337,6 @@ class Eink {
       this.selectionCtx = null;
     },
 
-    toggleSelectionMode() {
-      this.selectionMode = !this.selectionMode;
-    },
-
     getCanvasId(book) {
       const scrollLength = book.bookConfig.pagingMethod === "vertical" ? book.container.scrollHeight : book.container.scrollWidth;
       return "draw" + book.currentPage + "_" + book.instanceID + "_" + Math.round(book.container.clientWidth) + "_" + Math.round(book.container.clientHeight) + "_" + parseInt($(book.contents).css("font-size")) + "_" + scrollLength;
@@ -2354,6 +2385,11 @@ class Eink {
     lastTouch: null,
 
     enterHighlightMode(areas) {
+      if (document.readyState !== "complete") {
+        this.eink.notReady();
+        return;
+      }
+
       if (this.eink.mode === "eink.draw") this.eink.floatToolBar.exitDraw(); // This is for the immediately sketch by stylus feature, which is possible to enterScroll mode directly when the draw mode is on.
 
       this.eink.mode = "eink.highlight";
@@ -2777,6 +2813,10 @@ class Eink {
     },
 
     showNoteBook() {
+      if (document.readyState !== "complete") {
+        this.eink.notReady();
+        return;
+      }
       this.cachedMode = this.eink.mode;
       if (this.eink.mode === "eink.highlight") this.eink.floatToolBar.exitHighlight();
       else if (this.eink.mode === "eink.draw") this.eink.floatToolBar.exitDraw();
@@ -2874,6 +2914,8 @@ class Eink {
           highlightSection.append(markList);
         }
       }
+
+      this.eink.onSwitchMode({ mode: "eink.notebook" });
     },
 
     hideNoteBook() {
@@ -2884,7 +2926,10 @@ class Eink {
       this.eink.setupControl();
       if (this.cachedMode === "eink.highlight") {
         this.enterHighlightMode(this.eink.bookContents);
-      } else this.eink.mode = "eink.read";
+      } else {
+        this.eink.mode = "eink.read";
+        this.eink.onSwitchMode({ mode: "eink.read" });
+      }
     },
   };
 
@@ -2956,21 +3001,7 @@ class Eink {
             colorPt: this.makeTool("", this.showColorPt.bind(this), "showColorPt"),
             lineWidth: this.makeTool(this.lineWidthIcons[defaultLineWidth], this.showLineWidth.bind(this), "showLineWidth"),
             eraser: this.makeTool("eraser_icon", this.toggleEraser.bind(this), "toggleEraser"),
-            selection_erase: this.makeTool(
-              "selection_erase",
-              () => {
-                if (this.view.submenuOn) this.toggleSubmenu();
-                if (this.eink.painter.selectionMode === true) {
-                  $("#mainIconImg").replaceWith(Eink.getIconImg("pencilActivated_icon", "mainIconImg"));
-                  $("#selectionErase img").replaceWith(Eink.getIconImg("selection_erase"));
-                } else {
-                  $("#mainIconImg").replaceWith(Eink.getIconImg("selection_erase", "mainIconImg"));
-                  $("#selectionErase img").replaceWith(Eink.getIconImg("pencil_icon"));
-                }
-                this.eink.painter.toggleSelectionMode();
-              },
-              "selectionErase"
-            ),
+            selection_erase: this.makeTool("selection_erase", this.toggleSelectionEraseMode.bind(this), "selectionErase"),
             exit: this.makeTool(
               "flip_icon",
               (evt) => {
@@ -3080,6 +3111,26 @@ class Eink {
         img.id = newID;
       }
       return img;
+    },
+
+    toggleSelectionEraseMode() {
+      if (this.view.submenuOn) this.toggleSubmenu();
+      if (this.eink.painter.selectionMode === true) {
+        $("#mainIconImg").replaceWith(Eink.getIconImg("pencilActivated_icon", "mainIconImg"));
+        $("#selectionErase img").replaceWith(Eink.getIconImg("selection_erase"));
+      } else {
+        if (this.view.eraseMode === false) {
+          $("#mainIconImg").replaceWith(Eink.getIconImg("selection_erase", "mainIconImg"));
+          $("#selectionErase img").replaceWith(Eink.getIconImg("pencil_icon"));
+        } else {
+          $("#mainIconImg").replaceWith(Eink.getIconImg("selection_erase", "mainIconImg"));
+          $("#selectionErase img").replaceWith(Eink.getIconImg("pencil_icon"));
+          $("#toggleEraser img").replaceWith(Eink.getIconImg("eraser_icon"));
+          this.view.eraseMode = false;
+          this.eink.painter.mode = "draw";
+        }
+      }
+      this.eink.painter.selectionMode = !this.eink.painter.selectionMode;
     },
 
     repositionFloatToolBar() {
@@ -3327,8 +3378,15 @@ class Eink {
         $("#mainIconImg").replaceWith(Eink.getIconImg("pencilActivated_icon", "mainIconImg"));
         $("#toggleEraser img").replaceWith(Eink.getIconImg("eraser_icon"));
       } else {
-        $("#mainIconImg").replaceWith(Eink.getIconImg("eraserActivated_icon", "mainIconImg"));
-        $("#toggleEraser img").replaceWith(Eink.getIconImg("pencil_icon"));
+        if (this.eink.painter.selectionMode === false) {
+          $("#mainIconImg").replaceWith(Eink.getIconImg("eraserActivated_icon", "mainIconImg"));
+          $("#toggleEraser img").replaceWith(Eink.getIconImg("pencil_icon"));
+        } else {
+          $("#mainIconImg").replaceWith(Eink.getIconImg("eraserActivated_icon", "mainIconImg"));
+          $("#toggleEraser img").replaceWith(Eink.getIconImg("pencil_icon"));
+          $("#selectionErase img").replaceWith(Eink.getIconImg("selection_erase"));
+          this.eink.painter.selectionMode = false;
+        }
       }
       $("#mainIconImg").css("border-color", currentColor);
       $("#mainIconImg").css("border-width", currentWidth);
