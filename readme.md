@@ -19,7 +19,7 @@ Though it's originally designed for E Ink device users, this module can enhance 
 7. Rich keyboard shortcuts.
 8. Support [EinkBro](https://github.com/plateaukao/einkbro) E Ink browser.
 
-To better catch the spirit of this module, you can see a thorough explanation of this module and also a live demonstration at my blog:
+To better catch the spirit of this module, you can see a thorough explanation of this module and also a live demonstration at my blog: [Eink Mode Demonstration](https://jackscogito.blogspot.com/2025/04/e-ink-mode-making-web-pages-easier-to.html)
 
 ## How to Use This Module
 
