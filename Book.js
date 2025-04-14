@@ -734,6 +734,8 @@ class Book {
     this.#setupPages();
     this.setupListeners();
 
+    this.container.classList.add("disable-default-touch");
+
     if (this.isVisible) this.#jumpToAnchor(this.#anchor);
     this.#executeBookEvent("entereink");
     console.log(`Book ${this.instanceID} has entered Eink mode.`);
@@ -880,6 +882,17 @@ class Book {
         .pageNumDiv {
           display: none;
         }
+      }
+
+      .no-select {
+        -webkit-user-select: none;  /* Safari */
+          -moz-user-select: none;  /* Firefox */
+            -ms-user-select: none;  /* Internet Explorer/Edge */
+                user-select: none;  /* Non-prefixed version, currently supported by Chrome, Opera and Firefox */
+      }
+
+      .disable-default-touch {
+        touch-action: none;
       }
     `;
     style.textContent = this.bookConfig.einkStyle + defaultStyle + (memorize ? "" : cssText);
@@ -1554,6 +1567,7 @@ class Book {
       const tempStore = this.#eventHandlers; //Temporarily remove the book event handlers in order to show all the canvas without being hidden by pagechange.
       this.#eventHandlers = [];
       this.#processPageBreak();
+      this.container.classList.remove("disable-default-touch");
 
       // Store the original position
       this.#originalParent = this.container.parentNode;
@@ -1644,6 +1658,7 @@ class Book {
         height: this.pageHeight + "px",
       });
       $("#pageNumDiv_" + this.instanceID).show();
+      this.container.classList.add("disable-default-touch");
       this.setupListeners();
 
       this.#pageRanges = [];
@@ -1924,6 +1939,7 @@ class Book {
       this.container.scrollTop = 0;
     }
 
+    this.container.classList.remove("disable-default-touch");
     this.#executeBookEvent("enterscroll");
   }
 
@@ -2899,7 +2915,6 @@ class Book {
             try {
               range.surroundContents(note);
             } catch (e) {
-              console.error("Cannot wrap the selection: ", e);
               // Fallback: extract contents and insert them into the replace element
               const fragment = range.extractContents();
               note.appendChild(fragment);

@@ -169,7 +169,7 @@ Specify whether to auto-formatting the footnotes. For more detailed explanation,
 The title **header** of the webpage or website. This is used for the title of the highlight notebook. And when you use content table, this header won't be included in the content table.
 
 - `value`
-  A header element.
+  A CSS selector for the title element.
 - `default`
   The first \<h1> element in the webpage or website, if no \<h1>, \<h2> instead, etc.
 
