@@ -1296,6 +1296,8 @@ class Book {
           top: "0px",
           left: "0px",
           margin: "0px",
+          wordBreak: "break-word",
+          wordWrap: "break-word",
           paddingTop: `${this.bookConfig.upperMargin}px`,
           paddingBottom: `${this.bookConfig.lowerMargin}px`,
           paddingLeft: `${this.bookConfig.leftMargin}px`,
@@ -1356,6 +1358,8 @@ class Book {
         this.container,
         {
           position: $(this.container).css("position") === "static" ? "relative" : $(this.container).css("position"), // This is for precise positioning of CANVAS.
+          wordBreak: "break-word",
+          wordWrap: "break-word",
           paddingTop: `${this.bookConfig.upperMargin}px`,
           paddingBottom: `${this.bookConfig.lowerMargin}px`,
           paddingLeft: `${this.bookConfig.leftMargin}px`,

@@ -16,6 +16,7 @@ class Eink {
   lang = "zh-TW";
   isEinkDevice = false;
   inIOSBrowser = undefined;
+  isMacOS = false;
   preventGestures = false;
 
   #touchStartX = 0;
@@ -421,6 +422,7 @@ class Eink {
     this.autoLeave = configObj.autoLeave;
     this.autoEnter = configObj.autoEnter;
     this.einkStyle += configObj.einkStyle;
+    this.isMacOS = /Mac/.test(navigator.platform);
     this.inIOSBrowser = (() => {
       // This code is used to detect if the user is using an browser in iOS OR *** Safari in Mac OS.***
       const userAgent = navigator.userAgent || navigator.vendor || window.opera;
@@ -535,7 +537,7 @@ class Eink {
     $(window).on("pointermove.eink", eventHandler(this.#handlePointerMove));
     $(window).on("pointerup.eink pointercancel.eink", eventHandler(this.#handlePointerUp));
     $(window).on("keyup.eink", eventHandler(this.#handleKeyUp));
-    $(window).on("beforeunload.eink", eventHandler(this.#handleBackNavigation));
+    // $(window).on("beforeunload.eink", eventHandler(this.#handleBackNavigation));
   }
 
   #removeListeners() {
@@ -711,17 +713,21 @@ class Eink {
   }
 
   #setupKeyboardShortcuts(event) {
+    const modifierKey = this.isMacOS ? event.ctrlKey : event.altKey;
+    const altKey = this.isMacOS ? event.altKey : event.metaKey;
+
     if (event.key === "Escape" && $("#controlPanel").css("display") !== "none") {
       $("#controlPanel").hide();
       return;
     }
+
     if (this.mode === "eink.read") {
-      if (!this.#firstShortcutKey && event.ctrlKey) {
+      if (!this.#firstShortcutKey && modifierKey) {
         this.#firstShortcutKey = event.key;
         setTimeout(() => {
           this.#firstShortcutKey = null;
         }, 1000);
-      } else if (event.altKey) {
+      } else if (altKey) {
         this.setCursorImage("eraser");
       } else if (event.key === "Escape") {
         if (Book.focusedBook === this.mainBook) this.enterScrollMode();
@@ -729,7 +735,7 @@ class Eink {
       }
 
       // Shortcut keybindings
-      if (this.#firstShortcutKey === "Control") {
+      if (this.#firstShortcutKey === (this.isMacOS ? "Control" : "Alt")) {
         switch (event.key) {
           case "1":
             this.#setHighlightColor("rgb(0, 255, 0)");
@@ -766,7 +772,8 @@ class Eink {
   }
 
   #handleKeyUp(evt) {
-    if (evt.key === "Alt") {
+    const key = this.isMacOS ? "Alt" : "Meta";
+    if (evt.key === key) {
       this.setCursorImage("default");
     }
   }
@@ -880,11 +887,11 @@ class Eink {
       this.#startTouchesNumber = this.#activeTouches.length;
     } else if (evt.pointerType === "mouse") {
       if (this.mode === "eink.read" || this.mode === "scroll") {
-        if (evt.buttons === 1 && !evt.metaKey && !evt.altKey) {
+        if (evt.target.nodeName !== "HTML" && evt.buttons === 1 && !evt.metaKey && !evt.altKey && !evt.ctrlKey) {
           this.#longPressTimer = setTimeout(() => {
             this.mode === "eink.read" ? this.showControlPanel() : this.enterEinkMode();
           }, this.#longPressDuration);
-        } else if (evt.buttons === 1 && (evt.metaKey || evt.altKey)) {
+        } else if (evt.buttons === 1 && (evt.metaKey || evt.altKey || evt.ctrlKey)) {
           this.highlighter.enterHighlightMode(this.bookContents);
           $(this.floatToolBar.view).hide();
           $(Book.focusedBook.contents).trigger(evt);
@@ -894,7 +901,11 @@ class Eink {
     } else if (evt.pointerType === "pen") {
       // This code catch the fact that the  user has a stylus right now so it automatically enter draw mode. Thus users can sketch immediately.
       if (this.mode === "eink.read") {
-        if (document.readyState !== "complete") return;
+        if (document.readyState !== "complete") {
+          this.eink.notReady();
+          return;
+        }
+
         this.manual.hide();
         $("#controlPanel").hide();
         this.painter.enterDrawMode();
@@ -1947,11 +1958,11 @@ class Eink {
         this.eink.notReady();
         return;
       }
-      this.eink.floatToolBar.setFloatToolBar("draw");
 
       if (this.eink.mode !== "eink.draw") {
         this.eink.mode = "eink.draw";
         console.log("Entering draw mode. Setting up Canvas for drawing.");
+        this.eink.floatToolBar.setFloatToolBar("draw");
         this.floatToolBar = this.eink.floatToolBar.view;
         this.eink.#removeListeners();
 
@@ -1967,6 +1978,18 @@ class Eink {
 
         this.eink.onenterdraw({ books: this.eink.books });
         this.eink.onSwitchMode({ mode: "eink.draw", books: this.eink.books });
+      } else {
+        // User is currently using stylus but calling out the floating action button by gestures.
+        $("#floatToolBar").show();
+        if (this.hasPen) {
+          this.hasPen = false;
+          this.eink.books.forEach((book) => {
+            book.preventGestures = true;
+            $(book.container).off(".draw"); // Remove the handlePenDown and handleTouchUp pointer-event handlers.
+          });
+          this.eink.#removeListeners();
+          $(".draw").css("pointer-events", "auto"); // Reset this property to auto to allow touch and mouse events if users don't want to use the stylus and re-enter draw mode.
+        }
       }
     },
 
@@ -2102,7 +2125,9 @@ class Eink {
         this.selectionCtx.lineWidth = 2;
         this.selectionCtx.setLineDash([10, 10]);
         this.selectionCtx.beginPath();
-      } else if (!this.penActive && evt.pointerType === "touch") {
+      }
+
+      if (!this.penActive && evt.pointerType === "touch") {
         console.log("touch started");
         window.clearTimeout(this.countTimer);
         if (!this.lastTouch || (this.lastTouch !== evt && Math.abs(evt.clientX - this.lastTouch.clientX) > 10)) {
@@ -2122,6 +2147,11 @@ class Eink {
         } else if (contacts === 2) {
           // Set a timer to detect long press
           this.pressTimer = setTimeout(() => {
+            if (this.selectionMode) {
+              this.selectionMode = false;
+              this.eraseSelection(evt.target);
+            }
+            this.eink.#startTouchesNumber = 0; // Prevent gestures by the #handleTouchMove event of Eink Class.
             this.eink.floatToolBar.exitDraw();
           }, 600);
           this.startTouch = null;
@@ -2141,7 +2171,8 @@ class Eink {
             $(book.container).on("pointerup.draw pointercancel.draw", this.handleTouchUpWithPen.bind(this));
           });
         }
-        this.eink.inIOSBrowser ? $(this.floatToolBar).show() : $(this.floatToolBar).hide();
+        if (this.selectionMode || this.eink.inIOSBrowser) $(this.floatToolBar).show();
+        else $(this.floatToolBar).hide();
         this.penActive = true;
         this.startTouch = evt;
         this.currentBook.preventGestures = true;
@@ -2195,14 +2226,14 @@ class Eink {
           ctx.beginPath();
           ctx.moveTo(this.startTouch.clientX - this.offsetX, this.startTouch.clientY - this.offsetY);
           ctx.lineTo(evt.clientX - this.offsetX, evt.clientY - this.offsetY);
-          ctx.lineWidth = evt.pointerType === "pen" ? this.lineWidth * evt.originalEvent.pressure * 5 : this.lineWidth;
+          ctx.lineWidth = evt.pointerType === "pen" ? this.lineWidth * evt.originalEvent.pressure * 2 : this.lineWidth;
           ctx.strokeStyle = this.color;
           ctx.stroke();
           this.startTouch = evt;
         } else {
           let clearRectWidth;
           const pressure = evt.originalEvent.pressure ? evt.originalEvent.pressure : 0.5;
-          clearRectWidth = 100 * (evt.buttons === 32 ? 2 : 1) * pressure;
+          clearRectWidth = 50 * (evt.buttons === 32 ? 2 : 1) * pressure;
 
           ctx.clearRect(evt.clientX - this.offsetX - clearRectWidth / 2, evt.clientY - this.offsetY - clearRectWidth / 2, clearRectWidth, clearRectWidth);
         }
@@ -2315,22 +2346,24 @@ class Eink {
     },
 
     eraseSelection(canvas) {
-      // Remove the temporary selection canvas
-      this.selectionCanvas.remove();
+      if (this.selectionCanvas) {
+        // Remove the temporary selection canvas
+        this.selectionCanvas.remove();
 
-      const ctx = canvas.getContext("2d");
+        const ctx = canvas.getContext("2d");
 
-      // Erase the area inside the selection path
-      ctx.save();
-      ctx.globalCompositeOperation = "destination-out";
-      ctx.beginPath();
-      ctx.moveTo(this.storedSelectionPoints[0][0], this.storedSelectionPoints[0][1]);
-      for (let i = 1; i < this.storedSelectionPoints.length; i++) {
-        ctx.lineTo(this.storedSelectionPoints[i][0], this.storedSelectionPoints[i][1]);
+        // Erase the area inside the selection path
+        ctx.save();
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.beginPath();
+        ctx.moveTo(this.storedSelectionPoints[0][0], this.storedSelectionPoints[0][1]);
+        for (let i = 1; i < this.storedSelectionPoints.length; i++) {
+          ctx.lineTo(this.storedSelectionPoints[i][0], this.storedSelectionPoints[i][1]);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
       }
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
       // Reset the selection path
       this.storedSelectionPoints = [];
       this.selectionCanvas = null;
@@ -2350,6 +2383,7 @@ class Eink {
         });
         this.eink.#removeListeners(); // Prevent duplicate .eink event listeners because when pen is active, these .eink event listeners has been reactivated to keep the touch gesture features. In the exitDraw function, these event listeners will be setup again.
       }
+      if (this.selectionMode === true) this.selectionMode === false;
       $(this.floatToolBar).hide();
       if (this.floatToolBar.submenuOn) this.floatToolBar.toggleSubmenu();
       this.floatToolBar = null;
@@ -2448,7 +2482,8 @@ class Eink {
         if (this.book && this.pointWithinThePage(this.book, tx0, ty0)) {
           this.cachedStarterText = this.book.pageStarter.starter.textContent; // Cache the page starter text to check if the highlight is at the beginning of the page.
           //If erase mode is on, remove the highlight.
-          if (this.highlightColor === "rgb(128, 128, 128)" || evt.buttons === 32 || (evt.altKey && evt.buttons === 1)) {
+          const altKey = this.eink.isMacOS ? evt.altKey : evt.metaKey;
+          if (this.highlightColor === "rgb(128, 128, 128)" || evt.buttons === 32 || (altKey && evt.buttons === 1)) {
             if (targetEle) this.removeHighlight(this.book, targetEle);
           }
 
@@ -2511,7 +2546,7 @@ class Eink {
       evt.stopPropagation();
 
       if (this.maxTouchCount === 1 || evt.pointerType === "pen" || (evt.pointerType === "mouse" && evt.buttons === 1)) {
-        if (this.eink.floatToolBar.view.style.display === "none" && !(evt.metaKey || evt.altKey)) return; // if the user doesn't keep pressing the meta key, then return.
+        if (this.eink.floatToolBar.view.style.display === "none" && !(evt.metaKey || evt.altKey || evt.ctrlKey)) return; // if the user doesn't keep pressing the meta key, then return.
 
         const { clientX: tx0, clientY: ty0 } = evt;
         if ((evt.pointerType === "touch" && Math.abs(tx0 - this.tx0) < 5 && Math.abs(ty0 - this.ty0) < 5) || (evt.pointerType === "pen" && Math.abs(tx0 - this.tx0) < 3 && Math.abs(ty0 - this.ty0) < 3)) return; // Allow some tolerance for touches that are close to the initial touch position if the user only wants to flip the page by click motion.
@@ -2525,7 +2560,8 @@ class Eink {
         this.highlightMoved = true;
 
         //If erase mode is on, remove the highlight.
-        if (this.highlightColor === "rgb(128, 128, 128)" || evt.buttons === 32 || (evt.altKey && evt.buttons === 1)) {
+        const altKey = this.eink.isMacOS ? evt.altKey : evt.metaKey;
+        if (this.highlightColor === "rgb(128, 128, 128)" || evt.buttons === 32 || (altKey && evt.buttons === 1)) {
           const targetEle = document.elementFromPoint(tx0, ty0);
           if (targetEle) this.removeHighlight(this.book, targetEle);
         }
@@ -2854,6 +2890,8 @@ class Eink {
         const webAdr = document.createElement("h4");
         const bookTitle = document.createElement("h2");
         const hlTitle = document.createElement("h3");
+        const location = window.location.href.slice(0, window.location.href.indexOf("?"));
+
         highlightSection = document.createElement("div");
         highlightSection.classList.add("highlight-section");
         noteBook.classList.add("noteBook");
@@ -2863,8 +2901,7 @@ class Eink {
         author.classList.add("author");
         author.setAttribute("ignoreTable", "true");
         noteBook.append(author);
-        webAdr.innerHTML = `<b>Original Article: </b><a href="${window.location.href}">${window.location.href}</a>`;
-        webAdr.href = window.location.href;
+        webAdr.innerHTML = `<b>Original Article: </b><a href="${location}">${location}</a>`;
         webAdr.classList.add("web-address");
         webAdr.setAttribute("ignoreTable", "true");
         noteBook.append(webAdr);
