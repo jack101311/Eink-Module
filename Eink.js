@@ -9,18 +9,34 @@ THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
 */
 
 class Eink {
+  // Eink config properties
   mainBook = undefined;
+  lang = "zh-TW";
+  autoLeave = false;
+  autoEnter = false;
+  einkStyle = "";
+
+  mode = "scroll";
   manual = undefined;
   controlPanel = undefined;
-  mode = "scroll";
-  lang = "zh-TW";
   isEinkDevice = false;
   inIOSBrowser = undefined;
   isMacOS = false;
   preventGestures = false;
 
+  // Eink custom events
+  onEnterEink = () => {};
+  onEnterScroll = () => {};
+  onSwitchMode = () => {};
+  onenterhighlight = () => {};
+  onexithighlight = () => {};
+  onenterdraw = () => {};
+  onexitdraw = () => {};
+
   #touchStartX = 0;
   #touchStartY = 0;
+  #einkEvents = [];
+  #eventHandlers = [];
   #fontSizeChangeComplete = true;
   #activeTouches = [];
   #bookSelectors = [];
@@ -241,13 +257,6 @@ class Eink {
   }
 `;
 
-  onEnterEink = () => {};
-  onEnterScroll = () => {};
-  onSwitchMode = () => {};
-  onenterhighlight = () => {};
-  onexithighlight = () => {};
-  onenterdraw = () => {};
-  onexitdraw = () => {};
   manualItems = [
     {
       imgSrc:
@@ -349,24 +358,6 @@ class Eink {
     decreaseText_enabled: "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhDkiKmL3wwNJSXW4lPrAa9xJSLkKR68Lf9qxxu5_S_Z0wwIkkNwH0XY2mH_CL6S5fuQDwVudm7BrZ0y8KSKzYNOAPD4FC_OfjA7m2wiDSobwBRLpHuR1KAHlB9ghljP-vGnv-muujwcw/s200/Icons.003.png",
   };
 
-  // Eink config properties
-  autoLeave = false;
-  autoEnter = false;
-  einkStyle = "";
-
-  /**
-   * Creates an instance of the Eink class.
-   *
-   * @constructor
-   * @param {Book} [mainBook] - An optional Book object to be used as the main book for this Eink instance.
-   * @description This constructor initializes the Eink instance with a Book object.
-   *              By default, a Book object is created using the document's HTML element
-   *              for both the container and contents. If a Book object is passed as an
-   *              argument, it will replace the default Book object.
-   *              The Book object represents the main content to be displayed and
-   *              controlled in the Eink mode.
-   */
-
   constructor(configObj = {}) {
     const defaultConfig = {
       lang: undefined,
@@ -406,7 +397,7 @@ class Eink {
       this.mainBook = configObj.mainBook;
     } else if (this.#mainBookSelector) {
       const bookContainer = $(this.#mainBookSelector[0])[0];
-      if (bookContainer) this.mainBook = this.createBook(bookContainer, this.#mainBookSelector[1]);
+      if (bookContainer) this.mainBook = this.#createBook(bookContainer, this.#mainBookSelector[1]);
     }
 
     if (!this.mainBook) this.mainBook = new Book(document.body);
@@ -414,7 +405,7 @@ class Eink {
     // Create other books
     this.#bookSelectors.forEach(([selector, rule]) => {
       const bookContainer = $(selector)[0];
-      if (bookContainer) this.createBook(bookContainer, rule);
+      if (bookContainer) this.#createBook(bookContainer, rule);
     });
 
     this.mainBook.eink = this;
@@ -441,31 +432,17 @@ class Eink {
     })();
   }
 
-  createBook(container, rule) {
-    const bookConfig = {};
-
-    // Get the bookConfigProperties from Book.bookConfig
-    const bookConfigProperties = Object.keys(Book.prototype.bookConfig);
-
-    // Read custom properties from the CSS rule
-    bookConfigProperties.forEach((prop) => {
-      const cssValue = rule.style.getPropertyValue(`--${prop}`);
-      if (cssValue) {
-        // Convert the CSS value to the appropriate type
-        if (["fullScreen", "allowDraw", "allowHighlight", "useNotes"].includes(prop)) {
-          bookConfig[prop] = cssValue.trim() === "true";
-        } else if (["upperMargin", "lowerMargin", "leftMargin", "rightMargin", "zIndex", "minImgHeight"].includes(prop)) {
-          bookConfig[prop] = parseInt(cssValue, 10);
-        } else {
-          bookConfig[prop] = cssValue.trim();
-        }
-      }
-    });
-    if (bookConfig.lang === undefined) bookConfig.lang = this.lang;
-    console.log("Book Config:", bookConfig);
-    return new Book(container, bookConfig);
-  }
-
+  /**
+   * Initializes the Eink functionality.
+   * This function sets up the Eink style, preloads icon images, configures touch behavior,
+   * sets up manual and listeners, and manages the initial mode (eink or scroll) based on configuration.
+   *
+   * @function
+   * @name init
+   * @memberof Eink
+   * @instance
+   * @returns {void}
+   */
   init() {
     console.log("Initializing Eink");
     this.setupEinkStyle();
@@ -526,69 +503,274 @@ class Eink {
     return img;
   }
 
-  #setupListeners() {
-    const eventHandler = (handler) => (event) => {
+  addEventListener(event, handler) {
+    const events = event.split(" ");
+    const eventHandler = (event) => {
       if (!this.#loading) {
         handler.call(this, event);
       }
     };
 
-    $(window).on("pointerdown.eink", eventHandler(this.#handlePointerDown));
-    $(window).on("pointermove.eink", eventHandler(this.#handlePointerMove));
-    $(window).on("pointerup.eink pointercancel.eink", eventHandler(this.#handlePointerUp));
-    $(window).on("keyup.eink", eventHandler(this.#handleKeyUp));
-    // $(window).on("beforeunload.eink", eventHandler(this.#handleBackNavigation));
-  }
-
-  #removeListeners() {
-    $(window).off(".eink");
-  }
-
-  #setupPrintListener() {
-    // Setup printing
-    $(window).on("beforeprint.print", () => {
-      this.enterPrintMode();
-    });
-
-    $(window).on("afterprint.print", () => {
-      this.exitPrintMode();
+    events.forEach((event) => {
+      if (this.#einkEvents.includes(event)) {
+        // Register Eink events
+        this.#eventHandlers.push([event, handler]);
+      } else {
+        $(window).on(event + ".eink", eventHandler);
+      }
     });
   }
 
-  exitPrintMode() {
-    if (!this.#loading) {
-      Book.focusedBook.exitPrintMode();
-      console.log("finish printing");
+  removeEventListener(event = undefined, handler = undefined) {
+    if (!event) {
+      // If no event is specified, remove all event listeners
+      $(window).off(".eink");
+      this.#eventHandlers = [];
+    } else {
+      const events = event.split(" ");
+      events.forEach((event) => {
+        if (this.#einkEvents.includes(event)) {
+          // Remove Eink events listeners
+          if (handler) {
+            this.#eventHandlers = this.#eventHandlers.filter(([eventName, savedHandler]) => {
+              return !(eventName === event && savedHandler === handler);
+            });
+          } else {
+            this.#eventHandlers = this.#eventHandlers.filter(([eventName, savedHandler]) => {
+              return eventName !== event;
+            });
+          }
+        } else {
+          // Reset pointer event related variables before removing event listeners
+          if (event.includes("pointer")) {
+            this.#activeTouches = [];
+            this.#touchStartX = null;
+            this.#touchStartY = null;
+            this.#initialDistance = 0;
+            this.#startTouchesNumber = 0;
+          }
+
+          if (handler) {
+            $(Window).off(event + ".eink", handler);
+          } else {
+            $(window).off(event + ".eink");
+          }
+        }
+      });
     }
   }
 
-  enterPrintMode() {
-    if (!this.#loading) {
-      console.log("prepare for printing");
-      const focusedBook = Book.focusedBook;
-      console.log("Enter print mode: Focused book: ", focusedBook.instanceID);
-      this.setupEinkStyle(
-        `
-          @page {
-            size: ${focusedBook.pageWidth + focusedBook.bookConfig.leftMargin * 2}px ${focusedBook.pageHeight + focusedBook.bookConfig.upperMargin + focusedBook.bookConfig.lowerMargin}px; 
-            margin-top: 0px;
-            margin-bottom: 0px;
-            margin-left: 0px;
-            margin-right: 0px;
-          }
-        `,
-        false
-      );
-
-      // Exit other eink modes before printing
-      if (this.mode === "eink.draw") {
-        this.floatToolBar.exitDraw();
-      } else if (this.mode === "eink.highlight") {
-        this.floatToolBar.exitHighlight();
+  setupEinkBtn(location = {}) {
+    const defaultLocation = {
+      position: "static",
+      top: "30px",
+      left: "0px",
+      right: "30px",
+      bottom: "0px",
+    };
+    location = { ...defaultLocation, ...location };
+    let btnLocator = document.getElementsByClassName("einkBtn")[0];
+    let einkBtn = document.getElementById("einkBtn");
+    if (!einkBtn) {
+      einkBtn = document.createElement("div");
+      einkBtn.setAttribute("id", "einkBtn");
+      einkBtn.classList.add("bookUI");
+      einkBtn.classList.add("inactiveBtn");
+      einkBtn.innerHTML = "<b style='color:Blue'>e</b><b style='color:red'>ink</b>";
+      if (this.inIOSBrowser && document.readyState !== "complete") {
+        console.log("iOS Browser,content not fully loaded, disable click of Eink Btn");
+        $(window).on("load", () => {
+          console.log("Enable click of Eink Btn in iOS");
+          einkBtn.classList.add("activeBtn");
+          einkBtn.classList.remove("inactiveBtn");
+          einkBtn.onclick = (evt) => {
+            this.enterEinkMode();
+          };
+        });
+      } else {
+        einkBtn.classList.add("activeBtn");
+        einkBtn.classList.remove("inactiveBtn");
+        einkBtn.onclick = (evt) => {
+          this.enterEinkMode();
+        };
       }
+    }
 
-      $(".floatToolBar, .manual, .controlPanel").hide();
-      focusedBook.enterPrintMode();
+    if (btnLocator) {
+      $(einkBtn).css("position", "static");
+      btnLocator.appendChild(einkBtn);
+    } else {
+      document.documentElement.append(einkBtn);
+      $(einkBtn).css({
+        ...defaultLocation,
+        ...{
+          width: "fit-content",
+          height: "fit-content",
+          "z-index": 99999,
+        },
+      });
+    }
+  }
+
+  setupEinkStyle(cssText = "", memorize = true) {
+    let einkStyleSheet = document.getElementById("einkStyleSheet");
+    if (!einkStyleSheet) {
+      einkStyleSheet = document.createElement("style");
+      einkStyleSheet.id = "einkStyleSheet";
+      document.head.appendChild(einkStyleSheet);
+    }
+
+    if (this.mode.includes("eink")) {
+      if (memorize) {
+        this.einkStyle += cssText;
+        einkStyleSheet.textContent = this.einkStyle + this.#defaultStyle;
+      } else {
+        einkStyleSheet.textContent = this.einkStyle + this.#defaultStyle + cssText;
+      }
+    } else {
+      if (memorize) {
+        this.#defaultStyle += cssText;
+        einkStyleSheet.textContent = this.#defaultStyle + cssText;
+      } else {
+        einkStyleSheet.textContent = this.#defaultStyle + cssText;
+      }
+    }
+  }
+
+  setupControl(panelObjArray = [], rowItemNum = 3) {
+    let controlPanel;
+    controlPanel = document.getElementById("controlPanel");
+    let controlBox = document.getElementById("controlBox");
+    const contTable = this.mainBook.container.querySelector(".cont_table");
+    const boxWidth = 60 * rowItemNum + 10 * (rowItemNum + 1);
+
+    if (!controlPanel) {
+      controlPanel = document.createElement("DIV");
+      controlBox = document.createElement("DIV");
+      controlPanel.id = "controlPanel";
+      controlPanel.classList.add("eink");
+      controlBox.id = "controlBox";
+      $(controlPanel).on("click", (evt) => {
+        evt.stopPropagation();
+        this.hideControlPanel(evt);
+      });
+
+      setStyle();
+    }
+
+    controlBox.innerHTML = "";
+    $(controlBox).css("width", `${boxWidth}px`);
+    // If there are no panel objects, create default ones
+    if (panelObjArray.length === 0) {
+      panelObjArray = [
+        this.makePanelObj(
+          "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhGogFFCYWS2k_Hr2bYZQp3Vt36O-3kVUlnSK758Qon7mLhBpqADpL6h16B7ZU8r1u906cXMl4PGwyVyvMIVbmWTZSFy_9Oe4PFdgq6IAeQsYWGR9d2bC5gcpAsOcLTmk6TmE8Fq3roWg/s200/Icons.001.png",
+          this.#increaseText.bind(this),
+          "increaseText"
+        ),
+        this.makePanelObj(
+          "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgigG2M2hO3UhFmHW0lMuqcJWp1xLA_PUqS5mBu1V0_45jUjEuBEmiXQMLwxqcQKbVVdRKLa88_ixO5ObMwj0_TitNM3-doOmbwH8sQcXud-24zHEKEqdA6l9nSyJ4mG5deegiImMi0Vw/s320/Icons.004.png",
+          this.#decreaseText,
+          "decreaseText"
+        ),
+        this.makePanelObj(
+          "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiTlsX1vb-orCpX4uUapoCvAPDMBx7el484_fEIu8M41gi9R7JSaV4XuJwqFXXIaPd3_nijiDoCBn12nrSj3geh1T8ESOO-wmatEB9xSoyRCqeedswk6-8ePKgHnjS1vnZTIQksOgnZqrPAwK38Ey_gKZUYnJTul0EQUw8OWmI169vdpw3MhelyDqLL/s1600/My%20Icons.002.jpeg",
+          () => {
+            this.highlighter.enterHighlightMode(this.bookContents);
+          },
+          "highlightMode"
+        ),
+        this.makePanelObj(
+          "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgLTmabfpczkcfTrJgzBo_LR-RWaJIhyTNM8A7p_WHA5J2TIqs4drAqgI8QHvJjxr707Xy-Jw56Iq9H8NEjE7BZ_Bf_3Lxd3Ff2EuyLJTI3PD9_yjgBQr7kX7NU8wLclfUfl-V_3y40YFdI9kpfZ2hqBDq1GmGrIDD1sgfEEqHzuGnXjhYfjcy8JVFB/s1600/My%20Icons.001.jpeg",
+          () => {
+            this.painter.enterDrawMode();
+          },
+          "draw"
+        ),
+        this.makePanelObj(this.toolBarIconSrc.noteBook_icon, this.highlighter.showNoteBook.bind(this.highlighter), "noteBook"),
+        this.makePanelObj(
+          this.toolBarIconSrc.printer,
+          () => {
+            window.print();
+          },
+          "printMode"
+        ),
+        this.makePanelObj(
+          this.toolBarIconSrc.info_icon,
+          () => {
+            const titleText = this.lang === "zh-TW" ? "操作說明" : "manual";
+            $("#manualBox h3").text(titleText);
+            this.manual.show();
+          },
+          "showManual"
+        ),
+        this.makePanelObj(this.toolBarIconSrc.scroll_mode, this.enterScrollMode, "scrollMode"),
+      ];
+
+      if (contTable) {
+        panelObjArray.unshift(this.makePanelObj(this.toolBarIconSrc.content_table, this.showContentTable, "checkContent"));
+      } else {
+        panelObjArray.unshift(this.makePanelObj(this.toolBarIconSrc.content_table, this.showContentTable, "spacer_1"));
+      }
+    }
+
+    panelObjArray.forEach((panelObj) => {
+      const item = document.createElement("DIV");
+      const icon = document.createElement("IMG");
+      icon.setAttribute("src", panelObj.img);
+      item.setAttribute("id", panelObj.id);
+      if (panelObj.id.includes("spacer")) {
+        item.style.visibility = "hidden";
+      }
+      item.onclick = panelObj.func.bind(this);
+      item.setAttribute("class", "ctrBtn");
+      item.append(icon);
+      controlBox.append(item);
+    });
+
+    controlPanel.append(controlBox);
+    controlPanel.style.display = "none";
+
+    document.documentElement.append(controlPanel);
+    console.log("Control Panel created");
+
+    function setStyle() {
+      const styleSheet = document.createElement("STYLE");
+      styleSheet.id = "controlPanelStylesheet";
+      styleSheet.textContent = `
+    #controlPanel {
+      position: fixed;
+      top: 0px;
+      left: 0px;
+      z-index: 5000;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: rgba(0, 0, 0, 0.4);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+  }
+
+  #controlBox {
+      background-color: #fefefe;
+      display: flex;
+      width: 220px;
+      flex-wrap: wrap;
+      justify-content: space-evenly;
+      align-content: space-around;
+      padding: 10px;
+      border-radius: 20px;
+      border: 1px solid #888;
+  }
+
+  .ctrBtn {
+      display: flex;
+      width: 60px;
+      height: 60px;
+  }
+    `;
+      document.head.appendChild(styleSheet);
     }
   }
 
@@ -651,6 +833,272 @@ class Eink {
       this.onSwitchMode({ mode: "eink.read", books: this.books });
     });
   }
+
+  enterScrollMode() {
+    // This is for the immediately sketch by stylus or printing feature, which is possible to enterScroll mode directly when the draw mode or highlight mode is on.
+    if (this.mode === "eink.draw") this.floatToolBar.exitDraw();
+    if (this.mode === "eink.highlight") this.floatToolBar.exitHighlight();
+
+    this.mode = "scroll";
+    sessionStorage.mode = "scroll";
+    this.removeEinkStyle();
+    this.books.forEach((book) => {
+      book.enterScrollMode();
+    });
+
+    $(window).off(".print");
+    this.manual.hide();
+    $(".draw").hide();
+    $("#einkBtn").show();
+
+    // Create and show the popup
+    let message = this.lang === "zh-TW" ? "滑動瀏覽模式" : "Scroll Mode Activated";
+    this.showPopup(message);
+    document.documentElement.classList.remove("disable-default-touch");
+    this.onEnterScroll({ books: this.books });
+    this.onSwitchMode({ mode: "scroll", books: this.books });
+  }
+
+  enterPrintMode() {
+    if (!this.#loading) {
+      console.log("prepare for printing");
+      const focusedBook = Book.focusedBook;
+      console.log("Enter print mode: Focused book: ", focusedBook.instanceID);
+      this.setupEinkStyle(
+        `
+          @page {
+            size: ${focusedBook.pageWidth + focusedBook.bookConfig.leftMargin * 2}px ${focusedBook.pageHeight + focusedBook.bookConfig.upperMargin + focusedBook.bookConfig.lowerMargin}px; 
+            margin-top: 0px;
+            margin-bottom: 0px;
+            margin-left: 0px;
+            margin-right: 0px;
+          }
+        `,
+        false
+      );
+
+      // Exit other eink modes before printing
+      if (this.mode === "eink.draw") {
+        this.floatToolBar.exitDraw();
+      } else if (this.mode === "eink.highlight") {
+        this.floatToolBar.exitHighlight();
+      }
+
+      $(".floatToolBar, .manual, .controlPanel").hide();
+      focusedBook.enterPrintMode();
+    }
+  }
+
+  exitPrintMode() {
+    if (!this.#loading) {
+      Book.focusedBook.exitPrintMode();
+      console.log("finish printing");
+    }
+  }
+
+  removeEinkStyle() {
+    const einkStyleSheet = document.getElementById("einkStyleSheet");
+    if (einkStyleSheet) {
+      einkStyleSheet.textContent = this.#defaultStyle;
+    }
+  }
+
+  setHighlightColor(color) {
+    this.highlighter.highlightColor = color;
+    console.log(`Highlight color set to ${color}`);
+  }
+
+  setCursorImage(cursorType) {
+    const cursorImages = {
+      highlight: `url("path/to/highlight-cursor.png") 0 20, auto`,
+      draw: `url("path/to/draw-cursor.png") 0 20, auto`,
+      eraser: `url(${this.toolBarIconSrc.eraser_cursor}) 0 20, auto`,
+      default: "default",
+    };
+
+    document.body.style.cursor = cursorImages[cursorType] || cursorImages.default;
+  }
+
+  showControlPanel() {
+    $("#controlPanel").show();
+  }
+
+  hideControlPanel(evt) {
+    evt.stopPropagation();
+    $("#controlPanel").hide();
+
+    if (this.previewBook) this.#changeBookFontSize();
+  }
+
+  showPopup(message = "message") {
+    // Create popup element if it doesn't exist
+    let popup = document.getElementById("einkPupup");
+    if (!popup) {
+      popup = document.createElement("div");
+      popup.id = "einkPupup";
+      popup.classList.add(".eink");
+      document.documentElement.appendChild(popup);
+    }
+
+    // Set popup styles
+    popup.style.position = "fixed";
+    popup.style.left = "50%";
+    popup.style.top = "50%";
+    popup.style.transform = "translate(-50%, -50%)";
+    popup.style.backgroundColor = "rgba(0, 0, 0, 0.7)";
+    popup.style.color = "white";
+    popup.style.padding = "20px";
+    popup.style.borderRadius = "10px";
+    popup.style.zIndex = "9999";
+    popup.style.textAlign = "center";
+
+    // Set popup content
+    popup.textContent = message;
+
+    // Show the popup
+    popup.style.display = "block";
+
+    // Hide popup when clicked anywhere on the document
+    const hidePopup = (evt) => {
+      if (evt?.type === "pointerdown" && evt.pointerType === "pen") return;
+      popup.style.display = "none";
+      $(window).off("popup");
+    };
+
+    $(window).on("click.popup pointerdown.popup", hidePopup);
+
+    // Automatically hide popup after 2 seconds
+    setTimeout(hidePopup, 2000);
+  }
+
+  showConfirm(message, xPos = 30, yPos = 150) {
+    let customModal = document.getElementById("customConfirm");
+    if (!customModal) {
+      customModal = document.createElement("DIV");
+      customModal.id = "customConfirm";
+      customModal.classList.add("modal");
+      customModal.innerHTML = `
+      <div class="modal-content">
+      <p>Join highlights on the previous page?</p>
+      <button id="confirmYes">Yes</button>
+      <button id="confirmNo">No</button>
+      </div>
+      `;
+      document.documentElement.append(customModal);
+    }
+
+    return new Promise((resolve) => {
+      const modalText = customModal.querySelector("p");
+      const modalBox = customModal.querySelector(".modal-content");
+      if (xPos === undefined || xPos === "default") {
+        xPos = (window.innerWidth - 300) / 2;
+      }
+      modalBox.style.top = `${yPos}px`;
+      modalBox.style.left = `${xPos}px`;
+      modalText.textContent = message;
+      customModal.style.display = "block";
+
+      const yesButton = document.getElementById("confirmYes");
+      const noButton = document.getElementById("confirmNo");
+
+      function handleClick(result) {
+        customModal.style.display = "none";
+        resolve(result);
+      }
+
+      yesButton.onclick = () => handleClick(true);
+      noButton.onclick = () => handleClick(false);
+    });
+  }
+
+  showLoadingWindow(show = true, message = "Loading...") {
+    let loadingWindow = document.getElementById("loadingWindow");
+    if (show) {
+      this.#loading = true;
+
+      if (!loadingWindow) {
+        loadingWindow = document.createElement("div");
+        loadingWindow.id = "loadingWindow";
+        loadingWindow.style.position = "fixed";
+        loadingWindow.style.top = "0";
+        loadingWindow.style.left = "0";
+        loadingWindow.style.width = "100%";
+        loadingWindow.style.height = "100%";
+        loadingWindow.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
+        loadingWindow.style.zIndex = "10000";
+        loadingWindow.style.display = "flex";
+        loadingWindow.style.justifyContent = "center";
+        loadingWindow.style.alignItems = "center";
+
+        const messageBox = document.createElement("div");
+        messageBox.style.backgroundColor = "white";
+        messageBox.style.padding = "20px";
+        messageBox.style.borderRadius = "10px";
+        messageBox.style.boxShadow = "0 0 10px rgba(0, 0, 0, 0.3)";
+        messageBox.style.textAlign = "center";
+
+        if (!this.isEinkDevice) {
+          const spinner = document.createElement("div");
+          spinner.id = "loadingSpinner";
+          spinner.style.border = "4px solid #f3f3f3";
+          spinner.style.borderTop = "4px solid #3498db";
+          spinner.style.borderRadius = "50%";
+          spinner.style.width = "30px";
+          spinner.style.height = "30px";
+          spinner.style.animation = "spin 1s linear infinite";
+          spinner.style.margin = "0 auto 10px auto";
+
+          const style = document.createElement("style");
+          style.textContent = "@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }";
+          document.head.appendChild(style);
+
+          messageBox.appendChild(spinner);
+        }
+
+        const messageText = document.createElement("div");
+        messageText.id = "loadingMessage";
+
+        messageBox.appendChild(messageText);
+        loadingWindow.appendChild(messageBox);
+
+        document.documentElement.appendChild(loadingWindow);
+      }
+
+      const messageText = document.getElementById("loadingMessage");
+      messageText.textContent = message;
+      loadingWindow.style.display = "flex";
+
+      // Show or hide spinner based on isEinkDevice
+      const spinner = document.getElementById("loadingSpinner");
+      if (spinner) {
+        spinner.style.display = this.isEinkDevice ? "none" : "block";
+      }
+    } else {
+      this.#loading = false;
+      if (loadingWindow) {
+        loadingWindow.style.display = "none";
+      }
+    }
+  }
+
+  showContentTable() {
+    const contTablePage = this.mainBook.findContTablePage();
+    if (contTablePage) {
+      this.mainBook.currentPage = contTablePage;
+    }
+  }
+
+  notReady() {
+    const message = this.lang === "zh-TW" ? "請待網頁讀取完畢" : "Please wait for the page to load completely.";
+    this.showPopup(message);
+    $(window).on("load", () => {
+      const message = this.lang === "zh-TW" ? "網頁讀取完成" : "Page loaded.";
+      this.showPopup(message);
+    });
+    return;
+  }
+
+  makePanelObj = (img, func, id) => ({ img, func, id });
 
   #processEinkMediaQueries() {
     const processSelectorText = (selectorText) => selectorText.split(",").map((s) => s.trim());
@@ -722,6 +1170,29 @@ class Eink {
     }
 
     if (this.mode === "eink.read") {
+      // Shortcut keybindings
+      if (this.#firstShortcutKey) {
+        switch (event.key) {
+          case "1":
+            this.setHighlightColor("rgb(0, 255, 0)");
+            console.log("Highlight color set to green");
+            break;
+          case "2":
+            this.setHighlightColor("rgb(0, 0, 255)");
+            console.log("Highlight color set to blue");
+            break;
+          case "3":
+            this.setHighlightColor("rgb(255, 0, 0)");
+            console.log("Highlight color set to red");
+            break;
+          case "n":
+            this.highlighter.showNoteBook();
+            break;
+          case "c":
+            this.showContentTable();
+        }
+      }
+
       if (!this.#firstShortcutKey && modifierKey) {
         this.#firstShortcutKey = event.key;
         setTimeout(() => {
@@ -732,29 +1203,6 @@ class Eink {
       } else if (event.key === "Escape") {
         if (Book.focusedBook === this.mainBook) this.enterScrollMode();
         else if (Book.focusedBook.container.id === "note") Book.focusedBook.hideNoteWindow();
-      }
-
-      // Shortcut keybindings
-      if (this.#firstShortcutKey === (this.isMacOS ? "Control" : "Alt")) {
-        switch (event.key) {
-          case "1":
-            this.#setHighlightColor("rgb(0, 255, 0)");
-            console.log("Highlight color set to green");
-            break;
-          case "2":
-            this.#setHighlightColor("rgb(0, 0, 255)");
-            console.log("Highlight color set to blue");
-            break;
-          case "3":
-            this.#setHighlightColor("rgb(255, 0, 0)");
-            console.log("Highlight color set to red");
-            break;
-          case "n":
-            this.highlighter.showNoteBook();
-            break;
-          case "c":
-            this.checkContent();
-        }
       }
     } else if (this.mode === "eink.notebook") {
       if (event.key === "Escape") {
@@ -778,46 +1226,48 @@ class Eink {
     }
   }
 
-  #setHighlightColor(color) {
-    this.highlighter.highlightColor = color;
-    console.log(`Highlight color set to ${color}`);
+  #setupListeners() {
+    this.addEventListener("pointerdown", this.#handlePointerDown);
+    this.addEventListener("pointermove", this.#handlePointerMove);
+    this.addEventListener("pointerup pointercancel", this.#handlePointerUp);
+    this.addEventListener("keyup", this.#handleKeyUp);
+    // this.addEventListener("beforeunload", this.#handleBackNavigation);
   }
 
-  #testRefreshRate() {
-    return new Promise((resolve) => {
-      let frameCount = 0;
-      let startTime = performance.now();
+  #createBook(container, rule) {
+    const bookConfig = {};
 
-      const measureFPS = () => {
-        const currentTime = performance.now();
-        frameCount++;
+    // Get the bookConfigProperties from Book.bookConfig
+    const bookConfigProperties = Object.keys(Book.prototype.bookConfig);
 
-        if (currentTime - startTime >= 1000) {
-          const fps = Math.round((frameCount * 1000) / (currentTime - startTime));
-          console.log(`FPS: ${fps}`);
-          frameCount = 0;
-          startTime = currentTime;
-          requestAnimationFrame(measureFPS);
-
-          // resolve(fps);
+    // Read custom properties from the CSS rule
+    bookConfigProperties.forEach((prop) => {
+      const cssValue = rule.style.getPropertyValue(`--${prop}`);
+      if (cssValue) {
+        // Convert the CSS value to the appropriate type
+        if (["fullScreen", "allowDraw", "allowHighlight", "useNotes"].includes(prop)) {
+          bookConfig[prop] = cssValue.trim() === "true";
+        } else if (["upperMargin", "lowerMargin", "leftMargin", "rightMargin", "zIndex", "minImgHeight"].includes(prop)) {
+          bookConfig[prop] = parseInt(cssValue, 10);
         } else {
-          requestAnimationFrame(measureFPS);
+          bookConfig[prop] = cssValue.trim();
         }
-      };
-
-      requestAnimationFrame(measureFPS);
+      }
     });
+    if (bookConfig.lang === undefined) bookConfig.lang = this.lang;
+    console.log("Book Config:", bookConfig);
+    return new Book(container, bookConfig);
   }
 
-  setCursorImage(cursorType) {
-    const cursorImages = {
-      highlight: `url("path/to/highlight-cursor.png") 0 20, auto`,
-      draw: `url("path/to/draw-cursor.png") 0 20, auto`,
-      eraser: `url(${this.toolBarIconSrc.eraser_cursor}) 0 20, auto`,
-      default: "default",
-    };
+  #setupPrintListener() {
+    // Setup printing
+    $(window).on("beforeprint.print", () => {
+      this.enterPrintMode();
+    });
 
-    document.body.style.cursor = cursorImages[cursorType] || cursorImages.default;
+    $(window).on("afterprint.print", () => {
+      this.exitPrintMode();
+    });
   }
 
   #preloadIconImages() {
@@ -838,126 +1288,6 @@ class Eink {
     });
     document.documentElement.appendChild(iconImgDiv);
     iconImgDiv.style.display = "none";
-  }
-
-  setupEinkStyle(cssText = "", memorize = true) {
-    let einkStyleSheet = document.getElementById("einkStyleSheet");
-    if (!einkStyleSheet) {
-      einkStyleSheet = document.createElement("style");
-      einkStyleSheet.id = "einkStyleSheet";
-      document.head.appendChild(einkStyleSheet);
-    }
-
-    if (this.mode.includes("eink")) {
-      if (memorize) {
-        this.einkStyle += cssText;
-        einkStyleSheet.textContent = this.einkStyle + this.#defaultStyle;
-      } else {
-        einkStyleSheet.textContent = this.einkStyle + this.#defaultStyle + cssText;
-      }
-    } else {
-      if (memorize) {
-        this.#defaultStyle += cssText;
-        einkStyleSheet.textContent = this.#defaultStyle + cssText;
-      } else {
-        einkStyleSheet.textContent = this.#defaultStyle + cssText;
-      }
-    }
-  }
-
-  removeEinkStyle() {
-    const einkStyleSheet = document.getElementById("einkStyleSheet");
-    if (einkStyleSheet) {
-      einkStyleSheet.textContent = this.#defaultStyle;
-    }
-  }
-
-  #handlePointerDown(evt) {
-    if (evt.pointerType === "touch") {
-      this.#activeTouches.push(evt);
-      if (this.#activeTouches.length === 1) {
-        this.#touchStartX = evt.clientX;
-        this.#touchStartY = evt.clientY;
-      }
-      if (this.mode === "eink.read") {
-        if (this.#activeTouches.length === 2) {
-          this.#initialDistance = this.#getDistance(this.#activeTouches[0], this.#activeTouches[1]);
-        }
-      }
-      this.#startTouchesNumber = this.#activeTouches.length;
-    } else if (evt.pointerType === "mouse") {
-      if (this.mode === "eink.read" || this.mode === "scroll") {
-        if (evt.target.nodeName !== "HTML" && evt.buttons === 1 && !evt.metaKey && !evt.altKey && !evt.ctrlKey) {
-          this.#longPressTimer = setTimeout(() => {
-            this.mode === "eink.read" ? this.showControlPanel() : this.enterEinkMode();
-          }, this.#longPressDuration);
-        } else if (evt.buttons === 1 && (evt.metaKey || evt.altKey || evt.ctrlKey)) {
-          this.highlighter.enterHighlightMode(this.bookContents);
-          $(this.floatToolBar.view).hide();
-          $(Book.focusedBook.contents).trigger(evt);
-          Book.focusedBook.contents.setPointerCapture(evt.pointerId);
-        }
-      }
-    } else if (evt.pointerType === "pen") {
-      // This code catch the fact that the  user has a stylus right now so it automatically enter draw mode. Thus users can sketch immediately.
-      if (this.mode === "eink.read") {
-        if (document.readyState !== "complete") {
-          this.eink.notReady();
-          return;
-        }
-
-        this.manual.hide();
-        $("#controlPanel").hide();
-        this.painter.enterDrawMode();
-        $("#floatToolBar").hide();
-        const canvas = document.elementFromPoint(evt.clientX, evt.clientY);
-        $(canvas).trigger("pointerdown", {
-          target: canvas,
-          pointerType: "pen",
-          pointerId: evt.pointerId,
-          clientX: evt.clientX,
-          clientY: evt.clientY,
-          buttons: evt.buttons,
-          button: evt.button,
-          stopPropagation: () => {},
-        });
-        canvas.setPointerCapture(evt.pointerId);
-      }
-    }
-  }
-
-  #handlePointerMove(evt) {
-    if (this.mode === "eink.read") {
-      if (evt.pointerType === "touch" && !this.preventGestures && this.#startTouchesNumber === 2) {
-        const touchIndex = this.#activeTouches.findIndex((touch) => touch.pointerId === evt.pointerId);
-        if (touchIndex !== -1) {
-          this.#activeTouches[touchIndex] = evt;
-        }
-
-        const currentDistance = this.#getDistance(this.#activeTouches[0], this.#activeTouches[1]);
-        const deltaDistance = currentDistance - this.#initialDistance;
-        const pinchThreshold = 30; // Minimum change in distance to trigger text size change
-
-        if (Math.abs(deltaDistance) > pinchThreshold) {
-          if (this.#fontSizeChangeComplete) {
-            if (deltaDistance > 0) {
-              this.#increaseText(evt);
-            } else {
-              this.#decreaseText(evt);
-            }
-            this.#initialDistance = currentDistance;
-            this.#showSizeChangePopup(deltaDistance > 0);
-          } else {
-            this.#showLoadingWindow();
-          }
-        }
-      }
-    }
-
-    if (evt.pointerType === "mouse" && evt.buttons === 1) {
-      clearTimeout(this.#longPressTimer);
-      if (sessionStorage.mode === "eink") this.#mousemoved = true; // This is used to prevent flip of the book after mouseup if users wants to select the text by the mouse.
-    }
   }
 
   #handlePointerUp(evt) {
@@ -1044,67 +1374,98 @@ class Eink {
       }
     }
   }
+  #handlePointerMove(evt) {
+    if (this.mode === "eink.read") {
+      if (evt.pointerType === "touch" && !this.preventGestures && this.#startTouchesNumber === 2) {
+        const touchIndex = this.#activeTouches.findIndex((touch) => touch.pointerId === evt.pointerId);
+        if (touchIndex !== -1) {
+          this.#activeTouches[touchIndex] = evt;
+        }
+
+        const currentDistance = this.#getDistance(this.#activeTouches[0], this.#activeTouches[1]);
+        const deltaDistance = currentDistance - this.#initialDistance;
+        const pinchThreshold = 30; // Minimum change in distance to trigger text size change
+
+        if (Math.abs(deltaDistance) > pinchThreshold) {
+          if (this.#fontSizeChangeComplete) {
+            if (deltaDistance > 0) {
+              this.#increaseText(evt);
+            } else {
+              this.#decreaseText(evt);
+            }
+            this.#initialDistance = currentDistance;
+            this.#showSizeChangePopup(deltaDistance > 0);
+          } else {
+            this.showLoadingWindow();
+          }
+        }
+      }
+    }
+
+    if (evt.pointerType === "mouse" && evt.buttons === 1) {
+      clearTimeout(this.#longPressTimer);
+      if (sessionStorage.mode === "eink") this.#mousemoved = true; // This is used to prevent flip of the book after mouseup if users wants to select the text by the mouse.
+    }
+  }
+
+  #handlePointerDown(evt) {
+    if (evt.pointerType === "touch") {
+      this.#activeTouches.push(evt);
+      if (this.#activeTouches.length === 1) {
+        this.#touchStartX = evt.clientX;
+        this.#touchStartY = evt.clientY;
+      }
+      if (this.mode === "eink.read") {
+        if (this.#activeTouches.length === 2) {
+          this.#initialDistance = this.#getDistance(this.#activeTouches[0], this.#activeTouches[1]);
+        }
+      }
+      this.#startTouchesNumber = this.#activeTouches.length;
+    } else if (evt.pointerType === "mouse") {
+      if (this.mode === "eink.read" || this.mode === "scroll") {
+        if (evt.target.nodeName !== "HTML" && evt.buttons === 1 && !evt.metaKey && !evt.altKey && !evt.ctrlKey) {
+          this.#longPressTimer = setTimeout(() => {
+            this.mode === "eink.read" ? this.showControlPanel() : this.enterEinkMode();
+          }, this.#longPressDuration);
+        } else if (evt.buttons === 1 && (evt.metaKey || evt.altKey || evt.ctrlKey)) {
+          this.highlighter.enterHighlightMode(this.bookContents);
+          $(this.floatToolBar.view).hide();
+          $(Book.focusedBook.contents).trigger(evt);
+          Book.focusedBook.contents.setPointerCapture(evt.pointerId);
+        }
+      }
+    } else if (evt.pointerType === "pen") {
+      // This code catch the fact that the  user has a stylus right now so it automatically enter draw mode. Thus users can sketch immediately.
+      if (this.mode === "eink.read") {
+        if (document.readyState !== "complete") {
+          this.eink.notReady();
+          return;
+        }
+
+        this.manual.hide();
+        $("#controlPanel").hide();
+        this.painter.enterDrawMode();
+        $("#floatToolBar").hide();
+        const canvas = document.elementFromPoint(evt.clientX, evt.clientY);
+        $(canvas).trigger("pointerdown", {
+          target: canvas,
+          pointerType: "pen",
+          pointerId: evt.pointerId,
+          clientX: evt.clientX,
+          clientY: evt.clientY,
+          buttons: evt.buttons,
+          button: evt.button,
+          stopPropagation: () => {},
+        });
+        canvas.setPointerCapture(evt.pointerId);
+      }
+    }
+  }
 
   #getDistance(touch1, touch2) {
     const dx = touch1.clientX - touch2.clientX;
     const dy = touch1.clientY - touch2.clientY;
     return Math.sqrt(dx * dx + dy * dy);
-  }
-
-  showControlPanel() {
-    $("#controlPanel").show();
-  }
-
-  setupEinkBtn(location = {}) {
-    const defaultLocation = {
-      position: "static",
-      top: "30px",
-      left: "0px",
-      right: "30px",
-      bottom: "0px",
-    };
-    location = { ...defaultLocation, ...location };
-    let btnLocator = document.getElementsByClassName("einkBtn")[0];
-    let einkBtn = document.getElementById("einkBtn");
-    if (!einkBtn) {
-      einkBtn = document.createElement("div");
-      einkBtn.setAttribute("id", "einkBtn");
-      einkBtn.classList.add("bookUI");
-      einkBtn.classList.add("inactiveBtn");
-      einkBtn.innerHTML = "<b style='color:Blue'>e</b><b style='color:red'>ink</b>";
-      if (this.inIOSBrowser && document.readyState !== "complete") {
-        console.log("iOS Browser,content not fully loaded, disable click of Eink Btn");
-        $(window).on("load", () => {
-          console.log("Enable click of Eink Btn in iOS");
-          einkBtn.classList.add("activeBtn");
-          einkBtn.classList.remove("inactiveBtn");
-          einkBtn.onclick = (evt) => {
-            this.enterEinkMode();
-          };
-        });
-      } else {
-        einkBtn.classList.add("activeBtn");
-        einkBtn.classList.remove("inactiveBtn");
-        einkBtn.onclick = (evt) => {
-          this.enterEinkMode();
-        };
-      }
-    }
-
-    if (btnLocator) {
-      $(einkBtn).css("position", "static");
-      btnLocator.appendChild(einkBtn);
-    } else {
-      document.documentElement.append(einkBtn);
-      $(einkBtn).css({
-        ...defaultLocation,
-        ...{
-          width: "fit-content",
-          height: "fit-content",
-          "z-index": 99999,
-        },
-      });
-    }
   }
 
   #setupManual(lang = "zh-TW") {
@@ -1188,7 +1549,7 @@ class Eink {
 
         // Add event listener for orientation changes
         $(window).on("resize.manual", () => {
-          if (this.manual.isLandscape !== window.innerWidth > window.innerHeight) {
+          if (this.mode.includes("eink") && this.manual.isLandscape !== window.innerWidth > window.innerHeight) {
             renderManual();
             console.log("Orientation changed. Manual layout has been updated.");
           }
@@ -1339,269 +1700,6 @@ class Eink {
     }
   }
 
-  async customConfirm(message, xPos = 30, yPos = 150) {
-    let customModal = document.getElementById("customConfirm");
-    if (!customModal) {
-      customModal = document.createElement("DIV");
-      customModal.id = "customConfirm";
-      customModal.classList.add("modal");
-      customModal.innerHTML = `
-      <div class="modal-content">
-      <p>Join highlights on the previous page?</p>
-      <button id="confirmYes">Yes</button>
-      <button id="confirmNo">No</button>
-      </div>
-      `;
-      document.documentElement.append(customModal);
-    }
-
-    return new Promise((resolve) => {
-      const modalText = customModal.querySelector("p");
-      const modalBox = customModal.querySelector(".modal-content");
-      if (xPos === undefined || xPos === "default") {
-        xPos = (window.innerWidth - 300) / 2;
-      }
-      modalBox.style.top = `${yPos}px`;
-      modalBox.style.left = `${xPos}px`;
-      modalText.textContent = message;
-      customModal.style.display = "block";
-
-      const yesButton = document.getElementById("confirmYes");
-      const noButton = document.getElementById("confirmNo");
-
-      function handleClick(result) {
-        customModal.style.display = "none";
-        resolve(result);
-      }
-
-      yesButton.onclick = () => handleClick(true);
-      noButton.onclick = () => handleClick(false);
-    });
-  }
-
-  setupControl(panelObjArray = [], rowItemNum = 3) {
-    let controlPanel;
-    controlPanel = document.getElementById("controlPanel");
-    let controlBox = document.getElementById("controlBox");
-    const contTable = this.mainBook.container.querySelector(".cont_table");
-    const boxWidth = 60 * rowItemNum + 10 * (rowItemNum + 1);
-
-    if (!controlPanel) {
-      controlPanel = document.createElement("DIV");
-      controlBox = document.createElement("DIV");
-      controlPanel.id = "controlPanel";
-      controlPanel.classList.add("eink");
-      controlBox.id = "controlBox";
-      $(controlPanel).on("click", (evt) => {
-        evt.stopPropagation();
-        this.hidePanel(evt);
-      });
-
-      setStyle();
-    }
-
-    controlBox.innerHTML = "";
-    $(controlBox).css("width", `${boxWidth}px`);
-    // If there are no panel objects, create default ones
-    if (panelObjArray.length === 0) {
-      panelObjArray = [
-        this.makePanelObj(
-          "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhGogFFCYWS2k_Hr2bYZQp3Vt36O-3kVUlnSK758Qon7mLhBpqADpL6h16B7ZU8r1u906cXMl4PGwyVyvMIVbmWTZSFy_9Oe4PFdgq6IAeQsYWGR9d2bC5gcpAsOcLTmk6TmE8Fq3roWg/s200/Icons.001.png",
-          this.#increaseText.bind(this),
-          "increaseText"
-        ),
-        this.makePanelObj(
-          "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgigG2M2hO3UhFmHW0lMuqcJWp1xLA_PUqS5mBu1V0_45jUjEuBEmiXQMLwxqcQKbVVdRKLa88_ixO5ObMwj0_TitNM3-doOmbwH8sQcXud-24zHEKEqdA6l9nSyJ4mG5deegiImMi0Vw/s320/Icons.004.png",
-          this.#decreaseText,
-          "decreaseText"
-        ),
-        this.makePanelObj(
-          "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEiTlsX1vb-orCpX4uUapoCvAPDMBx7el484_fEIu8M41gi9R7JSaV4XuJwqFXXIaPd3_nijiDoCBn12nrSj3geh1T8ESOO-wmatEB9xSoyRCqeedswk6-8ePKgHnjS1vnZTIQksOgnZqrPAwK38Ey_gKZUYnJTul0EQUw8OWmI169vdpw3MhelyDqLL/s1600/My%20Icons.002.jpeg",
-          () => {
-            this.highlighter.enterHighlightMode(this.bookContents);
-          },
-          "highlightMode"
-        ),
-        this.makePanelObj(
-          "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEgLTmabfpczkcfTrJgzBo_LR-RWaJIhyTNM8A7p_WHA5J2TIqs4drAqgI8QHvJjxr707Xy-Jw56Iq9H8NEjE7BZ_Bf_3Lxd3Ff2EuyLJTI3PD9_yjgBQr7kX7NU8wLclfUfl-V_3y40YFdI9kpfZ2hqBDq1GmGrIDD1sgfEEqHzuGnXjhYfjcy8JVFB/s1600/My%20Icons.001.jpeg",
-          () => {
-            this.painter.enterDrawMode();
-          },
-          "draw"
-        ),
-        this.makePanelObj(this.toolBarIconSrc.noteBook_icon, this.highlighter.showNoteBook.bind(this.highlighter), "noteBook"),
-        this.makePanelObj(
-          this.toolBarIconSrc.printer,
-          () => {
-            window.print();
-          },
-          "printMode"
-        ),
-        this.makePanelObj(
-          this.toolBarIconSrc.info_icon,
-          () => {
-            const titleText = this.lang === "zh-TW" ? "操作說明" : "manual";
-            $("#manualBox h3").text(titleText);
-            this.manual.show();
-          },
-          "showManual"
-        ),
-        this.makePanelObj(this.toolBarIconSrc.scroll_mode, this.enterScrollMode, "scrollMode"),
-      ];
-
-      if (contTable) {
-        panelObjArray.unshift(this.makePanelObj(this.toolBarIconSrc.content_table, this.checkContent, "checkContent"));
-      } else {
-        panelObjArray.unshift(this.makePanelObj(this.toolBarIconSrc.content_table, this.checkContent, "spacer_1"));
-      }
-    }
-
-    panelObjArray.forEach((panelObj) => {
-      const item = document.createElement("DIV");
-      const icon = document.createElement("IMG");
-      icon.setAttribute("src", panelObj.img);
-      item.setAttribute("id", panelObj.id);
-      if (panelObj.id.includes("spacer")) {
-        item.style.visibility = "hidden";
-      }
-      item.onclick = panelObj.func.bind(this);
-      item.setAttribute("class", "ctrBtn");
-      item.append(icon);
-      controlBox.append(item);
-    });
-
-    controlPanel.append(controlBox);
-    controlPanel.style.display = "none";
-
-    document.documentElement.append(controlPanel);
-    console.log("Control Panel created");
-
-    function setStyle() {
-      const styleSheet = document.createElement("STYLE");
-      styleSheet.id = "controlPanelStylesheet";
-      styleSheet.textContent = `
-    #controlPanel {
-      position: fixed;
-      top: 0px;
-      left: 0px;
-      z-index: 5000;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background-color: rgba(0, 0, 0, 0.4);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-  }
-
-  #controlBox {
-      background-color: #fefefe;
-      display: flex;
-      width: 220px;
-      flex-wrap: wrap;
-      justify-content: space-evenly;
-      align-content: space-around;
-      padding: 10px;
-      border-radius: 20px;
-      border: 1px solid #888;
-  }
-
-  .ctrBtn {
-      display: flex;
-      width: 60px;
-      height: 60px;
-  }
-    `;
-      document.head.appendChild(styleSheet);
-    }
-  }
-
-  makePanelObj = (img, func, id) => ({ img, func, id });
-
-  checkContent() {
-    const contTablePage = this.mainBook.findContTablePage();
-    if (contTablePage) {
-      this.mainBook.currentPage = contTablePage;
-    }
-  }
-
-  hidePanel(evt) {
-    evt.stopPropagation();
-    $("#controlPanel").hide();
-
-    if (this.previewBook) this.#changeBookFontSize();
-  }
-
-  #showLoadingWindow(show = true, message = "Loading...") {
-    let loadingWindow = document.getElementById("loadingWindow");
-    if (show) {
-      this.#loading = true;
-
-      if (!loadingWindow) {
-        loadingWindow = document.createElement("div");
-        loadingWindow.id = "loadingWindow";
-        loadingWindow.style.position = "fixed";
-        loadingWindow.style.top = "0";
-        loadingWindow.style.left = "0";
-        loadingWindow.style.width = "100%";
-        loadingWindow.style.height = "100%";
-        loadingWindow.style.backgroundColor = "rgba(0, 0, 0, 0.5)";
-        loadingWindow.style.zIndex = "10000";
-        loadingWindow.style.display = "flex";
-        loadingWindow.style.justifyContent = "center";
-        loadingWindow.style.alignItems = "center";
-
-        const messageBox = document.createElement("div");
-        messageBox.style.backgroundColor = "white";
-        messageBox.style.padding = "20px";
-        messageBox.style.borderRadius = "10px";
-        messageBox.style.boxShadow = "0 0 10px rgba(0, 0, 0, 0.3)";
-        messageBox.style.textAlign = "center";
-
-        if (!this.isEinkDevice) {
-          const spinner = document.createElement("div");
-          spinner.id = "loadingSpinner";
-          spinner.style.border = "4px solid #f3f3f3";
-          spinner.style.borderTop = "4px solid #3498db";
-          spinner.style.borderRadius = "50%";
-          spinner.style.width = "30px";
-          spinner.style.height = "30px";
-          spinner.style.animation = "spin 1s linear infinite";
-          spinner.style.margin = "0 auto 10px auto";
-
-          const style = document.createElement("style");
-          style.textContent = "@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }";
-          document.head.appendChild(style);
-
-          messageBox.appendChild(spinner);
-        }
-
-        const messageText = document.createElement("div");
-        messageText.id = "loadingMessage";
-
-        messageBox.appendChild(messageText);
-        loadingWindow.appendChild(messageBox);
-
-        document.documentElement.appendChild(loadingWindow);
-      }
-
-      const messageText = document.getElementById("loadingMessage");
-      messageText.textContent = message;
-      loadingWindow.style.display = "flex";
-
-      // Show or hide spinner based on isEinkDevice
-      const spinner = document.getElementById("loadingSpinner");
-      if (spinner) {
-        spinner.style.display = this.isEinkDevice ? "none" : "block";
-      }
-    } else {
-      this.#loading = false;
-      if (loadingWindow) {
-        loadingWindow.style.display = "none";
-      }
-    }
-  }
-
   #changeBookFontSize() {
     // Check if Font size has been set
     if (this.#fontSizeAdjustment !== 0) {
@@ -1614,7 +1712,7 @@ class Eink {
         if (evt.startPageNum === evt.endPageNum) {
           // Show loading window to inform the user the setting of font size is not complete yet
           BoundaryHit = true;
-          this.#showLoadingWindow(true, "Loading....");
+          this.showLoadingWindow(true, "Loading....");
         }
       };
 
@@ -1639,7 +1737,7 @@ class Eink {
           const threshold = 50;
           if (Math.abs(xMove) < threshold && yMove > threshold) {
             jump = "tail";
-            if (!this.#fontSizeChangeComplete) this.#showLoadingWindow();
+            if (!this.#fontSizeChangeComplete) this.showLoadingWindow();
             else {
               targetBook.currentPage = targetBook.totalPages;
               this.previewBook.remove(true);
@@ -1648,7 +1746,7 @@ class Eink {
             }
           } else if (Math.abs(xMove) < threshold && yMove < -threshold) {
             jump = "head";
-            if (!this.#fontSizeChangeComplete) this.#showLoadingWindow();
+            if (!this.#fontSizeChangeComplete) this.showLoadingWindow();
             else {
               targetBook.currentPage = 1;
               this.previewBook.remove(true);
@@ -1672,7 +1770,7 @@ class Eink {
       }).then(() => {
         this.#fontSizeChangeComplete = true;
         this.#updateFontSizeButtons();
-        this.#showLoadingWindow(false); // Hide loading window
+        this.showLoadingWindow(false); // Hide loading window
         console.log("Font size change complete");
 
         const range = this.previewBook.previewRange;
@@ -1813,16 +1911,6 @@ class Eink {
     }
   }
 
-  notReady() {
-    const message = this.lang === "zh-TW" ? "請待網頁讀取完畢" : "Please wait for the page to load completely.";
-    this.showPopup(message);
-    $(window).on("load", () => {
-      const message = this.lang === "zh-TW" ? "網頁讀取完成" : "Page loaded.";
-      this.showPopup(message);
-    });
-    return;
-  }
-
   #showSizeChangePopup(isIncrease) {
     clearTimeout(this.#popupTimeout);
 
@@ -1849,78 +1937,6 @@ class Eink {
     this.#popupTimeout = setTimeout(() => {
       popup.style.display = "none";
     }, 1000);
-  }
-
-  resetPages() {
-    this.books.forEach((book) => {
-      book.resetPages();
-    });
-  }
-
-  enterScrollMode() {
-    // This is for the immediately sketch by stylus or printing feature, which is possible to enterScroll mode directly when the draw mode or highlight mode is on.
-    if (this.mode === "eink.draw") this.floatToolBar.exitDraw();
-    if (this.mode === "eink.highlight") this.floatToolBar.exitHighlight();
-
-    this.mode = "scroll";
-    sessionStorage.mode = "scroll";
-    this.removeEinkStyle();
-    this.books.forEach((book) => {
-      book.enterScrollMode();
-    });
-
-    $(window).off(".print");
-    this.manual.hide();
-    $(".draw").hide();
-    $("#einkBtn").show();
-
-    // Create and show the popup
-    let message = this.lang === "zh-TW" ? "滑動瀏覽模式" : "Scroll Mode Activated";
-    this.showPopup(message);
-    document.documentElement.classList.remove("disable-default-touch");
-    this.onEnterScroll({ books: this.books });
-    this.onSwitchMode({ mode: "scroll", books: this.books });
-  }
-
-  showPopup(message = "message") {
-    // Create popup element if it doesn't exist
-    let popup = document.getElementById("einkPupup");
-    if (!popup) {
-      popup = document.createElement("div");
-      popup.id = "einkPupup";
-      popup.classList.add(".eink");
-      document.documentElement.appendChild(popup);
-    }
-
-    // Set popup styles
-    popup.style.position = "fixed";
-    popup.style.left = "50%";
-    popup.style.top = "50%";
-    popup.style.transform = "translate(-50%, -50%)";
-    popup.style.backgroundColor = "rgba(0, 0, 0, 0.7)";
-    popup.style.color = "white";
-    popup.style.padding = "20px";
-    popup.style.borderRadius = "10px";
-    popup.style.zIndex = "9999";
-    popup.style.textAlign = "center";
-
-    // Set popup content
-    popup.textContent = message;
-
-    // Show the popup
-    popup.style.display = "block";
-
-    // Hide popup when clicked anywhere on the document
-    const hidePopup = (evt) => {
-      if (evt?.type === "pointerdown" && evt.pointerType === "pen") return;
-      popup.style.display = "none";
-      $(window).off("popup");
-    };
-
-    $(window).on("click.popup pointerdown.popup", hidePopup);
-
-    // Automatically hide popup after 2 seconds
-    setTimeout(hidePopup, 2000);
   }
 
   painter = {
@@ -1964,7 +1980,7 @@ class Eink {
         console.log("Entering draw mode. Setting up Canvas for drawing.");
         this.eink.floatToolBar.setFloatToolBar("draw");
         this.floatToolBar = this.eink.floatToolBar.view;
-        this.eink.#removeListeners();
+        this.eink.removeEventListener();
 
         this.handlePagechange = (evt) => {
           this.createCanvas(evt.book);
@@ -1987,7 +2003,7 @@ class Eink {
             book.preventGestures = true;
             $(book.container).off(".draw"); // Remove the handlePenDown and handleTouchUp pointer-event handlers.
           });
-          this.eink.#removeListeners();
+          this.eink.removeEventListener();
           $(".draw").css("pointer-events", "auto"); // Reset this property to auto to allow touch and mouse events if users don't want to use the stylus and re-enter draw mode.
         }
       }
@@ -2381,7 +2397,7 @@ class Eink {
         this.eink.books.forEach((book) => {
           $(book.container).off(".draw"); // Remove the handlePenDown and handleTouchUp pointer-event handlers.
         });
-        this.eink.#removeListeners(); // Prevent duplicate .eink event listeners because when pen is active, these .eink event listeners has been reactivated to keep the touch gesture features. In the exitDraw function, these event listeners will be setup again.
+        this.eink.removeEventListener(); // Prevent duplicate .eink event listeners because when pen is active, these .eink event listeners has been reactivated to keep the touch gesture features. In the exitDraw function, these event listeners will be setup again.
       }
       if (this.selectionMode === true) this.selectionMode === false;
       $(this.floatToolBar).hide();
@@ -2429,7 +2445,7 @@ class Eink {
       this.eink.mode = "eink.highlight";
       this.eink.floatToolBar.setFloatToolBar("highlight");
       console.log("Enter highlight mode");
-      this.eink.#removeListeners();
+      this.eink.removeEventListener();
       this.highlightAreas = areas;
       areas.forEach((area) => {
         if (area) {
@@ -2770,7 +2786,7 @@ class Eink {
                 } else {
                   confirmMessage = "Join highlights on the previous page?";
                 }
-                joinPrevPage = await this.eink.customConfirm(confirmMessage, "default", bottom / 2, book.pageWidth);
+                joinPrevPage = await this.eink.showConfirm(confirmMessage, "default", bottom / 2, book.pageWidth);
                 book.ignoreMutation = 1;
               }
             }

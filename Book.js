@@ -499,7 +499,7 @@ class Book {
 
   static isElementEmpty(elem) {
     // Check if the element is an image
-    if (["img", "canvas", "svg", "input", "iframe", "area", "base", "col", "embed", "hr", "link", "source", "param"].includes(elem.nodeName.toLowerCase())) {
+    if (["br", "img", "canvas", "svg", "input", "iframe", "area", "base", "col", "embed", "hr", "link", "source", "param"].includes(elem.nodeName.toLowerCase())) {
       return false;
     }
 
@@ -1162,7 +1162,7 @@ class Book {
     }
     if (!reset) console.log(`----------------------Setting pages for book ${this.instanceID}...----------------------`);
 
-    $(this.contents).find("br").remove();
+    $(this.contents).find("br").not(".code-block >").remove();
 
     if (this.bookConfig.pagingMethod === "vertical") {
       this.pageWidth = this.contents.clientWidth;
@@ -2173,46 +2173,6 @@ class Book {
     });
   }
 
-  static #handleVolumeKeyPageFlip(evt) {
-    if (evt.target === document) return; // Important! This is to prevent users touch on iframe and casuing quick continuous page turning.
-    if (Book.focusedBook.mode === "eink") {
-      if (!Book.#preventVolumnKeyEvent) {
-        const scrollTopPos = Math.round(document.documentElement.scrollTop);
-
-        if (!Book.#pageFlipped) {
-          if (scrollTopPos > Book.#scrollBufferLength / 2) {
-            Book.focusedBook.currentPage++;
-            Book.#pageFlipped = true;
-          } else if (scrollTopPos < Book.#scrollBufferLength / 2) {
-            Book.focusedBook.currentPage--;
-            Book.#pageFlipped = true;
-          }
-          document.documentElement.scrollTop = Book.#scrollBufferLength / 2;
-        } else {
-          Book.#pageFlipped = false;
-        }
-      } else {
-        Book.#preventVolumnKeyEvent = false;
-        document.documentElement.scrollTop = Book.#scrollBufferLength / 2;
-      }
-    }
-  }
-
-  #executeBookEvent(event, evtObj = {}) {
-    this["on" + event] && this["on" + event].call(this, evtObj);
-    this.#eventHandlers.forEach(([eventName, handler]) => {
-      if (eventName === event) {
-        handler.call(this, evtObj);
-      }
-    });
-  }
-
-  #setupResizeObserver() {
-    this.#resizeObserver = new ResizeObserver(this.#handleResizeOrVisibility.bind(this));
-    this.#resizeObserver.observe(this.container);
-    console.log("Resize observer has been set for book " + this.instanceID);
-  }
-
   removeEventListener(event = undefined, handler = undefined) {
     if (!event) {
       // Remove all book DOM event listeners (not Book events listeners.)
@@ -2270,6 +2230,46 @@ class Book {
         }
       });
     }
+  }
+
+  static #handleVolumeKeyPageFlip(evt) {
+    if (evt.target === document) return; // Important! This is to prevent users touch on iframe and casuing quick continuous page turning.
+    if (Book.focusedBook.mode === "eink") {
+      if (!Book.#preventVolumnKeyEvent) {
+        const scrollTopPos = Math.round(document.documentElement.scrollTop);
+
+        if (!Book.#pageFlipped) {
+          if (scrollTopPos > Book.#scrollBufferLength / 2) {
+            Book.focusedBook.currentPage++;
+            Book.#pageFlipped = true;
+          } else if (scrollTopPos < Book.#scrollBufferLength / 2) {
+            Book.focusedBook.currentPage--;
+            Book.#pageFlipped = true;
+          }
+          document.documentElement.scrollTop = Book.#scrollBufferLength / 2;
+        } else {
+          Book.#pageFlipped = false;
+        }
+      } else {
+        Book.#preventVolumnKeyEvent = false;
+        document.documentElement.scrollTop = Book.#scrollBufferLength / 2;
+      }
+    }
+  }
+
+  #executeBookEvent(event, evtObj = {}) {
+    this["on" + event] && this["on" + event].call(this, evtObj);
+    this.#eventHandlers.forEach(([eventName, handler]) => {
+      if (eventName === event) {
+        handler.call(this, evtObj);
+      }
+    });
+  }
+
+  #setupResizeObserver() {
+    this.#resizeObserver = new ResizeObserver(this.#handleResizeOrVisibility.bind(this));
+    this.#resizeObserver.observe(this.container);
+    console.log("Resize observer has been set for book " + this.instanceID);
   }
 
   #createPageStarter(starter, offset = 0) {
@@ -3166,6 +3166,138 @@ class BookEditor {
         return evt.index;
       }
     };
+  }
+
+  static formatCodeBlock(code) {
+    // Note: If combined with highlight.js, you should process the code by highlight.js before calling this method.
+    // please wrap the code in a <pre> tag with a <code> tag inside. The param of this method should be the <code> element.
+    let codeStyle = document.getElementById("code-block-style");
+    if (!codeStyle) {
+      codeStyle = document.createElement("style");
+      codeStyle.id = "code-block-style";
+      codeStyle.textContent = `
+      .code-section .code-line-number {
+        margin: 0px;
+        padding-top: 2px;
+        position: absolute;
+        font-size: 12px;
+        color: gray;
+        left: -20px;
+        width: 30px;
+        text-align: center;
+      }
+      .code-section .fold-icon {
+        width: 10px;
+        position: absolute;
+        height: auto;
+        left: -15px;
+        top: 5px;
+        opacity: 0.3;
+      }
+
+      .code-section .fold-button {
+        position: relative;
+      }
+
+      .code-section .fold-button:hover,
+      .code-section .fold-button:active {
+        cursor: pointer;
+      }
+
+      code.code-section {
+        position: relative;
+        padding: 10px 10px 10px 15px;
+        margin: 20px 0px;
+        font-size: 14px;
+        line-height: 1.5;
+        background-color: white;
+        word-wrap: break-word;
+        word-break: break-word;
+        /* border-radius: 10px; */
+      }
+
+      div.code-block {
+        /* background-color: rgba(128, 128, 128, 0.1); */
+        margin: 3px 0px 0px 0px;
+        padding: 3px 0px 3px 20px;
+        /* border-radius: 10px; */
+        border-left: 1px dashed gray;
+      }
+      `;
+      document.head.appendChild(codeStyle);
+    }
+
+    const text = code.innerHTML;
+    const lines = text.split("\n");
+    const codeBlocks = [];
+    const rootBlock = code.cloneNode(false);
+    const unfoldIcon = "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh61PrcDdc05urR5s9YBt-zsRGyk51SKcunC0Ha8sYECZK9aEX_EYKv5fe5au4ERFc83wYtbe5-G4tkM9bTtih-AzGh7-0GHBrm_xixoaBR0eSO2zuLWkQooXIaHims2Mk1g6_KKyoIrw/s320/25223.png";
+    const foldIcon = "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEhLS0VMZ5HkQS6wSuNLbo1a8uYSiiysarkQCKxLrH31AdFKDcC1_0klWP9FGtsa9_1tKu-NEX7SniBnDSIhzLBuvMpZ1vy8HIja-OKm6wXQme057NMMF1lJ8UJLklsP9VnRd2BspzQXAA/s200/25623.png";
+
+    rootBlock.classList.add("code-section");
+
+    let currentIndentation = 0;
+    codeBlocks[currentIndentation] = rootBlock;
+    let currentCodeBlock = codeBlocks[currentIndentation];
+    let lineNumber = 0;
+
+    const processLine = (line) => {
+      let leadingSpaces = 0;
+      lineNumber++;
+      for (let char of line) {
+        if (char === " ") {
+          leadingSpaces++;
+        } else break;
+      }
+      const indentation = Math.ceil(leadingSpaces / 2);
+      if (line.trim() === "") {
+        currentCodeBlock.innerHTML += `<div class="code-line-number">${lineNumber}</div>`; // Add line number
+        currentCodeBlock.innerHTML += "<br />";
+        return;
+      }
+
+      // trim the leading spaces
+      line = line.slice(leadingSpaces);
+      if (indentation !== 0 && line.includes("{")) {
+        line = `<span class='fold-button'><img class='fold-icon' src='${foldIcon}'></img>` + line + "</span>";
+      }
+
+      if (indentation < currentIndentation) {
+        currentCodeBlock = codeBlocks[indentation];
+        currentIndentation = indentation;
+      } else if (indentation > currentIndentation) {
+        // Make new code block and append the line to it
+        const newBlock = document.createElement("div");
+        newBlock.className = "code-block";
+        codeBlocks[indentation] = newBlock;
+        currentCodeBlock.append(newBlock);
+        currentCodeBlock = newBlock;
+        currentIndentation = indentation;
+      }
+      currentCodeBlock.innerHTML += `<div class="code-line-number">${lineNumber}</div>`; // Add line number
+      currentCodeBlock.innerHTML += line;
+      currentCodeBlock.innerHTML += `<br />`; // Add line break
+    };
+
+    lines.shift(); // Remove the first line (which is an empty line)
+    lines.pop(); // Remove the last line (which is an empty line)
+    lines.forEach(processLine);
+    $(code).replaceWith(rootBlock);
+    $(rootBlock).unwrap();
+    $(rootBlock)
+      .find(".fold-button")
+      .on("click", (e) => {
+        e.stopPropagation();
+        let nextElem = e.currentTarget.nextElementSibling;
+        let foldIconImg = e.currentTarget.querySelector(".fold-icon");
+        foldIconImg.src = foldIconImg.src === unfoldIcon ? foldIcon : unfoldIcon;
+        if (nextElem?.nodeName === "BR") nextElem = nextElem.nextElementSibling;
+        if (nextElem?.classList?.contains("code-block")) {
+          nextElem.style.display = nextElem.style.display === "none" ? "block" : "none";
+        }
+      });
+
+    console.log(`Code block formatted in element:`, code);
   }
 
   changeStyle(elem, styleRules, isNewElem = false) {

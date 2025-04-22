@@ -23,11 +23,13 @@ To better catch the spirit of this module, you can see a thorough explanation of
 
 ## How to Use This Module
 
-1. Download the scripts and upload them to your web server or websites. Put the script in the same folder of your webpage.
-2. Reference them with `<script>` tag in the `<head>` section.
+1. This module depends on jQuery, so please include the latest version of jQuery to your site first.
+2. Download the Book.js and Eink.js scripts and upload them to your web server or websites. Put the script in the same folder of your webpage.
+3. Reference them with `<script>` tag in the `<head>` section.
 
 ```html
 <head>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
   <script src="Book.js"></script>
   <script src="Eink.js"></script>
 </head>
@@ -182,6 +184,10 @@ This is used for the author name in the highlight notebook.
 - `default`
   ""
 
+## Dependency
+
+1. jQuery 3.7.1
+
 ## Online Documentation
 
 To fine tune the Eink module for your website, there are APIs for Eink class and Book class. The usage of the APIs will be provided and documented in the online documentation. (Now the documentation is under construction, please wait and coming soon.)
@@ -193,6 +199,3 @@ If you like this project. You can support this project by giving feedback, being
 If you succesfully apply this module to your website and your website is public, please share it with me. I will be glad to see the project works well.
 
 For any suggestions, feed backs, please email me at jacks101311@gmail.com
-</br>
-</br>
-[![Please support this project by dontation](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/jack101311)
